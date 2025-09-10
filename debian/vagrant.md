@@ -7,7 +7,7 @@ vim Vagrantfile.debian
 ```ruby
 Vagrant.configure("2") do |config|
   config.vm.define "debianvm" do |debianvm|
-    debianvm.vm.box = "debian/bullseye64"
+    debianvm.vm.box = "debian/bookworm64"
 
     # Hostname
     debianvm.vm.hostname = "debian.mydomain.test"

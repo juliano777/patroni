@@ -1,6 +1,6 @@
 Vagrant.configure("2") do |config|
   config.vm.define "etcd" do |etcd|
-    etcd.vm.box = "debian/bullseye64"
+    etcd.vm.box = "debian/bookworm64"
 
     # Hostname
     etcd.vm.hostname = "etcd.mydomain.test"

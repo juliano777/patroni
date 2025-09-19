@@ -1,0 +1,29 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "debian/bookworm64"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.cpus = 2
+    vb.memory = 2048
+  end
+
+  # db-01
+  config.vm.define "db-01" do |node|
+    node.vm.hostname = "db-01.mydomain.test"
+    node.vm.network "private_network", ip: "192.168.56.71"
+    node.vm.provision "shell", path: "sh/00-pg_install.sh"
+  end
+
+  # db-02
+  config.vm.define "db-02" do |node|
+    node.vm.hostname = "db-02.mydomain.test"
+    node.vm.network "private_network", ip: "192.168.56.72"
+    node.vm.provision "shell", path: "sh/00-pg_install.sh"
+  end
+
+  # db-03
+  config.vm.define "db-03" do |node|
+    node.vm.hostname = "db-03.mydomain.test"
+    node.vm.network "private_network", ip: "192.168.56.73"
+    node.vm.provision "shell", path: "sh/00-pg_install.sh"
+  end
+end

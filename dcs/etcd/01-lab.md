@@ -94,17 +94,17 @@ Bash completion
 # Install bash-completion package
 sudo apt install -y bash-completion
 
-# 
+# Generate bash completion script
 etcdctl completion bash > ~/.etcdctl-completion.sh
 
-# 
+# Make the script be read when loggin in
 cat << EOF >> ~/.bashrc
 
 # etcdctl completion
 source ~/.etcdctl-completion.sh
 EOF
 
-# 
+# Since the user is already logged in, make bash completion take effect 
 source <(etcdctl completion bash)
 ```
 
@@ -114,6 +114,9 @@ Create a variable ("`foo`"):
 ```bash
 etcdctl put foo bar
 ```
+Key: `foo`  
+Value: `var`
+
 
 Get the value from "`foo`" variable:
 ```bash
@@ -155,11 +158,12 @@ URLs de peer: http://localhost:2380
 URLs de client: http://192.168.56.10:2379, http://localhost:2379  
 IsLearner: false  
 
-Isso significa que seu etcd está rodando localmente e é acessível via 192.168.56.10:2379 e localhost:2379.
+It means your etcd is running locally and is reachable via
+`192.168.56.10:2379` and `localhost:2379`.
 
 
 
-XXXXXXXXXXXXXXXXXXXXXXXXXX:
+Create `admin` role:
 ```bash
 etcdctl role add admin
 ```

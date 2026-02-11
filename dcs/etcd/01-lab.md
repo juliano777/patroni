@@ -38,7 +38,7 @@ vagrant ssh etcd
 
 -->
 
-## Installation and initial configuration
+## Installation and initial configuration (single node)
 
 [$] Install etcd:
 ```bash
@@ -109,7 +109,7 @@ groups | tr ' ' '\n' | grep etcd
 etcd
 ```
 
-## TLS
+### TLS
 
 [$] Criar diretório de configuração e certificados:
 ```bash
@@ -193,7 +193,7 @@ ETCD_LISTEN_PEER_URLS='https://192.168.56.10:2380'
 ETCD_INITIAL_ADVERTISE_PEER_URLS='https://192.168.56.10:2380'
 
 # CLUSTER
-ETCD_INITIAL_CLUSTER='dcs-00=https://localhost:2380,https://192.168.56.10:2380'
+ETCD_INITIAL_CLUSTER='dcs-00=https://192.168.56.10:2380'
 ETCD_INITIAL_CLUSTER_STATE='new'
 ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
 
@@ -280,7 +280,7 @@ tcp        0      0 127.0.0.1:2379          0.0.0.0:*               LISTEN      
 ```
 
 
-## Testing
+### Testing
 
 [$] Create a variable ("`foo`"):
 ```bash
@@ -310,7 +310,7 @@ greeting
 Hello, etcd
 ```
 
-## Authentication
+### Authentication
 
 [$] Para verificar os membros do cluster etcd e confirmar se o serviço está
 ativo, utilize o comando abaixo:
@@ -420,7 +420,7 @@ AuthRevision: 7
 ```
 
 
-## Testing
+### Testing
 
 
 [$] Teste com autenticação:
@@ -453,7 +453,7 @@ foo
 bar
 ```
 
-## Backup
+### Backup
 
 [$] Criar diretório de backup e ajustes de permissão e propriedade:
 ```bash
@@ -488,21 +488,6 @@ ls -lh /var/lib/dcs/backup/
 total 24K
 -rw------- 1 tux tux 21K Feb 11 16:38 etcd-snapshot.db
 ```
-
-> Observação
->
-> Se você quiser evitar comandos gigantes toda hora, pode exportar:
-> 
-> `export ETCDCTL_ENDPOINTS="https://192.168.56.10:2379"`
-> `export ETCDCTL_CACERT="/etc/dcs/cert/ca.crt"`
-> `export ETCDCTL_CERT="/etc/dcs/cert/dcs.crt"`
-> `export ETCDCTL_KEY="/etc/dcs/cert/dcs.key"`
-> `export ETCDCTL_USER="root"`
->
-> Aí basta:
-> 
-> `etcdctl snapshot save /var/lib/dcs/backup/etcd-snapshot.db`
-
 
 [$] Parar o serviço etcd:
 ```bash
@@ -554,6 +539,46 @@ Password:
 foo
 bar
 ```
+
+### Environment variables
+
+[$] Arquivo de variáveis de ambiente:
+```bash
+cat << EOF > ~/.etcdvars
+export ETCDCTL_ENDPOINTS='https://192.168.56.10:2379'
+export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
+export ETCDCTL_CERT='/etc/dcs/cert/dcs.crt'
+export ETCDCTL_KEY='/etc/dcs/cert/dcs.key'
+export ETCDCTL_USER='root'
+EOF
+```
+
+[$] Aplicar as variáveis:
+```bash
+source ~/.etcdvars
+```
+
+[$] A cada login ler aplicar as variáveis de ambiente:
+```bash
+cat << EOF >> ~/.bashrc
+
+# Read etcd environment variables file
+source ~/.etcdvars
+EOF
+```
+
+[$] Teste de variáveis de ambiente:
+```bash
+etcdctl get --print-value-only foo
+```
+```
+Password: 
+bar
+```
+
+
+export ETCDCTL_PASSWORD='123'
+
 
 <!-- ## Replication -->
 

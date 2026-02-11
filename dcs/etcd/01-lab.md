@@ -60,8 +60,8 @@ echo 'export ETCDCTL_API=3' | sudo tee /etc/profile.d/etcdctl.sh
 sudo ss -nltp | grep etcd
 ```
 ```
-LISTEN 0      4096       127.0.0.1:2380      0.0.0.0:*    users:(("etcd",pid=650,fd=3))
-LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=650,fd=6))
+LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=596,fd=6))
+LISTEN 0      4096       127.0.0.1:2380      0.0.0.0:*    users:(("etcd",pid=596,fd=3))
 ```
 The services are listening only on localhost.
 
@@ -156,7 +156,7 @@ Authentication Enabled
 etcdctl auth status
 ```
 ```
-{"level":"warn","ts":"2026-02-11T18:33:00.223121-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc00037e1e0/127.0.0.1:2379","attempt":0,"error":"rpc error: code = InvalidArgument desc = etcdserver: user name is empty"}
+{"level":"warn","ts":"2026-02-11T19:45:01.494454-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc00038ab40/127.0.0.1:2379","attempt":0,"error":"rpc error: code = InvalidArgument desc = etcdserver: user name is empty"}
 Error: etcdserver: user name is empty
 ```
 
@@ -250,15 +250,16 @@ cat << EOF > /etc/dcs/etcd
 ETCD_NAME='dcs-00'
 ETCD_DATA_DIR='/var/lib/etcd'
 
-# CLIENT URLs (local + rede)
-ETCD_LISTEN_CLIENT_URLS='https://192.168.56.10:2379,https://127.0.0.1:2379'
+# CLIENT URLs
+# Isso permite que ele aceite conexões em qualquer interface ativa
+ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
 ETCD_ADVERTISE_CLIENT_URLS='https://192.168.56.10:2379'
 
 # PEER URLs
-ETCD_LISTEN_PEER_URLS='https://192.168.56.10:2380'
+ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
 ETCD_INITIAL_ADVERTISE_PEER_URLS='https://192.168.56.10:2380'
 
-# CLUSTER
+# O restante do arquivo permanece IGUAL
 ETCD_INITIAL_CLUSTER='dcs-00=https://192.168.56.10:2380'
 ETCD_INITIAL_CLUSTER_STATE='new'
 ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
@@ -312,9 +313,8 @@ It means your etcd is running locally and is reachable via
 sudo ss -nltp | grep etcd
 ```
 ```
-LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=987,fd=6))
-LISTEN 0      4096   192.168.56.10:2380      0.0.0.0:*    users:(("etcd",pid=987,fd=3))
-LISTEN 0      4096   192.168.56.10:2379      0.0.0.0:*    users:(("etcd",pid=987,fd=7))  
+LISTEN 0      4096               *:2380            *:*    users:(("etcd",pid=391,fd=3))
+LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid=391,fd=6)) 
 ```
 
 ### Testing
@@ -380,7 +380,7 @@ ls -lh /var/lib/dcs/backup/
 ```
 ```
 total 24K
--rw------- 1 tux tux 21K Feb 11 18:39 etcd-snapshot.db
+-rw------- 1 tux tux 21K Feb 11 19:48 etcd-snapshot.db
 ```
 
 [$] Parar o serviço etcd:
@@ -402,10 +402,10 @@ sudo etcdutl snapshot restore /var/lib/dcs/backup/etcd-snapshot.db \
   --initial-advertise-peer-urls https://192.168.56.10:2380
 ```  
 ```
-2026-02-11T18:40:12-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
-2026-02-11T18:40:12-03:00	info	membership/store.go:141	Trimming membership information from the backend...
-2026-02-11T18:40:12-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
-2026-02-11T18:40:12-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-11T19:49:00-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-11T19:49:00-03:00	info	membership/store.go:141	Trimming membership information from the backend...
+2026-02-11T19:49:00-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
+2026-02-11T19:49:00-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
 ```
 
 

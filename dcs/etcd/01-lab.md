@@ -46,12 +46,7 @@ vagrant ssh etcd
 sudo apt update
 
 # Installation and then clean up the downloaded packages
-sudo apt install -y etcd-client etcd-server && sudo apt clean
-```
-
-[$] Habilitar e iniciar o serviço:
-```bash
-sudo systemctl enable --now etcd
+sudo apt install -y etcd-{client,server} && sudo apt clean
 ```
 
 [$] Como o Patroni exige v3, explicitar isso como variável de ambiente:
@@ -60,17 +55,13 @@ export ETCDCTL_API=3
 echo 'export ETCDCTL_API=3' | sudo tee /etc/profile.d/etcdctl.sh
 ```
 
-[$] Check ports:
+[$] Check etcd ports:
 ```bash
-# Install net-tools package to provide netstat
-sudo apt install -y net-tools
-
-# Checking etcd ports
-sudo netstat -nltp | grep etcd
+sudo ss -nltp | grep etcd
 ```
 ```
-tcp        0      0 127.0.0.1:2379          0.0.0.0:*               LISTEN      594/etcd            
-tcp        0      0 127.0.0.1:2380          0.0.0.0:*               LISTEN      594/etcd
+LISTEN 0      4096       127.0.0.1:2380      0.0.0.0:*    users:(("etcd",pid=650,fd=3))
+LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=650,fd=6))
 ```
 The services are listening only on localhost.
 
@@ -96,17 +87,90 @@ Adding user tux to group etcd
 ```bash
 groups | tr ' ' '\n' | grep etcd
 ```
-Sem retorno, `dcs` ainda não consta.\
+Sem retorno, `etcd` ainda não consta.\
 É preciso logar novamente.
 
-Desconecte e conecte novamente 
+> **Observação**
+>
+> Neste ponto é preciso sair e se conectar de novo.
 
-[$] Após logar novamente, chegar grupos do usuário:
+[$] Após logar novamente, checar grupos do usuário:
 ```bash
 groups | tr ' ' '\n' | grep etcd
 ```
 ```
 etcd
+```
+
+### Authentication
+
+[$] Create root role:
+```bash
+etcdctl role add root
+```
+```
+Role root created
+```
+
+> **Observação**  
+>
+> O `etcd` permite criar usuários e roles antes de ativar a autenticação.
+> Durante essa fase, *warnings* são esperados e podem ser ignorados.
+
+[$] Conceder permissões totais ao role root:
+```bash
+etcdctl role grant-permission root --prefix=true readwrite /
+```
+```
+Role root updated
+```
+
+[$] Criar o usuário root:
+```bash
+etcdctl user add root
+```
+```
+Password of root: 
+Type password of root again for confirmation: 
+User root created
+```
+
+[$] Associar o usuário root ao role root:
+```bash
+etcdctl user grant-role root root
+```
+```
+Role root is granted to user root
+```
+
+[$] Enable authentication:
+```bash
+etcdctl auth enable
+```
+```
+Authentication Enabled
+```
+
+[$] Verificando o status de autenticação (erro esperado):
+```bash
+etcdctl auth status
+```
+```
+{"level":"warn","ts":"2026-02-11T18:33:00.223121-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc00037e1e0/127.0.0.1:2379","attempt":0,"error":"rpc error: code = InvalidArgument desc = etcdserver: user name is empty"}
+Error: etcdserver: user name is empty
+```
+
+Mensagem de erro por não fornecer um usuário após a autenticação ter sido
+habilitada.
+
+[$] Verificando o status de autenticação:
+```bash
+etcdctl auth status --user root
+```
+```
+Password: 
+Authentication Status: true
+AuthRevision: 5
 ```
 
 ### TLS
@@ -141,8 +205,7 @@ openssl genrsa -out /etc/dcs/cert/dcs.key 4096
 openssl req -new \
   -key /etc/dcs/cert/dcs.key \
   -subj '/CN=dcs' \
-  -out /etc/dcs/cert/dcs.csr \
-  -addext 'subjectAltName = IP:192.168.56.10,DNS:dcs-00.patroni.mydomain,DNS:localhost'
+  -out /etc/dcs/cert/dcs.csr
 
 # Criar um arquivo de extensão SAN
 cat << EOF > /etc/dcs/cert/dcs.ext
@@ -153,6 +216,7 @@ IP.1 = 192.168.56.10
 IP.2 = 127.0.0.1
 DNS.1 = localhost
 DNS.2 = dcs-00
+DNS.3 = dcs-00.patroni.mydomain
 EOF
 
 
@@ -174,7 +238,9 @@ subject=CN=dcs
 
 [$] Ajustes de permissões e propriedade:
 ```bash
-sudo chmod 0660 /etc/dcs/cert/*
+sudo chmod 0600 /etc/dcs/cert/ca.key
+sudo chmod 0640 /etc/dcs/cert/*.crt
+sudo chmod 0640 /etc/dcs/cert/dcs.key
 sudo chown -R etcd:etcd /etc/dcs
 ```
 
@@ -185,7 +251,7 @@ ETCD_NAME='dcs-00'
 ETCD_DATA_DIR='/var/lib/etcd'
 
 # CLIENT URLs (local + rede)
-ETCD_LISTEN_CLIENT_URLS='https://127.0.0.1:2379,https://192.168.56.10:2379'
+ETCD_LISTEN_CLIENT_URLS='https://192.168.56.10:2379,https://127.0.0.1:2379'
 ETCD_ADVERTISE_CLIENT_URLS='https://192.168.56.10:2379'
 
 # PEER URLs
@@ -235,35 +301,7 @@ etcdctl \
 8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
 ```
 
-- **ID**  
-  Identificador único do membro dentro do cluster etcd.  
-  Exemplo: `8cc5336ad7ebe6b`
-
-- **Status**  
-  Indica o estado atual do membro no cluster.  
-  - `started`: membro ativo e participando do cluster  
-  - `unstarted`: membro registrado, mas não em execução
-
-- **Nome**  
-  Nome lógico do nó no cluster, geralmente associado ao hostname.  
-  Exemplo: `dcs-00`
-
-- **Peer URLs**  
-  Endereços usados para **comunicação interna entre os nós do etcd**  
-  (replicação de dados e consenso Raft).  
-  Exemplo: `https://192.168.56.10:2380, https://192.168.56.10:2379`
-
-- **Client URLs**  
-  Endereços usados por **clientes externos** (Patroni, aplicações, `etcdctl`)  
-  para se conectar ao etcd.  
-  Exemplo:
-  - `http://192.168.56.10:2379`
-  - `http://localhost:2379`
-
-- **IsLearner**  
-  Indica se o membro é um *learner*.  
-  - `false`: membro pleno, participa do consenso do cluster  
-  - `true`: membro apenas replica dados, não participa do consenso
+<Explicar a saída>
 
 It means your etcd is running locally and is reachable via
 `192.168.56.10:2379` and `localhost:2379`.
@@ -271,159 +309,18 @@ It means your etcd is running locally and is reachable via
 
 [$] Check ports again:
 ```bash
-sudo netstat -nltp | grep etcd
+sudo ss -nltp | grep etcd
 ```
 ```
-tcp        0      0 192.168.56.10:2380      0.0.0.0:*               LISTEN      835/etcd            
-tcp        0      0 192.168.56.10:2379      0.0.0.0:*               LISTEN      835/etcd            
-tcp        0      0 127.0.0.1:2379          0.0.0.0:*               LISTEN      835/etcd 
+LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=987,fd=6))
+LISTEN 0      4096   192.168.56.10:2380      0.0.0.0:*    users:(("etcd",pid=987,fd=3))
+LISTEN 0      4096   192.168.56.10:2379      0.0.0.0:*    users:(("etcd",pid=987,fd=7))  
 ```
-
-
-### Testing
-
-[$] Create a variable ("`foo`"):
-```bash
-etcdctl put foo bar
-```
-
-[$] Get the value from "`foo`" variable:
-```bash
-etcdctl get foo
-```
-```
-foo
-bar
-```
-
-[$] Create a variable ("`greeting`"):
-```bash
-etcdctl put greeting 'Hello, etcd'
-```
-
-[$] Get the value from "`greeting`" variable:
-```bash
-etcdctl get greeting
-```
-```
-greeting
-Hello, etcd
-```
-
-### Authentication
-
-[$] Para verificar os membros do cluster etcd e confirmar se o serviço está
-ativo, utilize o comando abaixo:
-```bash
-etcdctl member list
-```
-```
-8cc5336ad7ebe6b, started, dcs-00.patroni.mydomain, http://localhost:2380, http://192.168.56.10:2379, false
-```
-
-[$] Create root role:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  role add root
-```
-```
-Password: 
-{"level":"warn","ts":"2026-02-11T16:25:46.133091-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc0003912c0/192.168.56.10:2379","attempt":0,"error":"rpc error: code = FailedPrecondition desc = etcdserver: authentication is not enabled"}
-Role root created
-```
-
-[$] Conceder permissões totais ao role root:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  role grant-permission root --prefix=true readwrite /
-```
-```
-Password: 
-{"level":"warn","ts":"2026-02-11T16:29:50.445822-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc0000f92c0/192.168.56.10:2379","attempt":0,"error":"rpc error: code = FailedPrecondition desc = etcdserver: authentication is not enabled"}
-Role root updated
-```
-
-[$] Criar o usuário root:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  user add root
-```
-```
-Password of root: 
-Type password of root again for confirmation: 
-Password: 
-{"level":"warn","ts":"2026-02-11T16:31:50.931640-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc0000fa780/192.168.56.10:2379","attempt":0,"error":"rpc error: code = FailedPrecondition desc = etcdserver: authentication is not enabled"}
-User root created
-```
-
-[$] Associar o usuário root ao role root:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  user grant-role root root
-```
-```
-Password: 
-{"level":"warn","ts":"2026-02-11T16:32:09.639177-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc000398780/192.168.56.10:2379","attempt":0,"error":"rpc error: code = FailedPrecondition desc = etcdserver: authentication is not enabled"}
-Role root is granted to user root
-```
-
-[$] Enable authentication:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  auth enable
-```
-```
-Password: 
-{"level":"warn","ts":"2026-02-11T16:32:25.218037-0300","logger":"etcd-client","caller":"v3/retry_interceptor.go:63","msg":"retrying of unary invoker failed","target":"etcd-endpoints://0xc0000df2c0/192.168.56.10:2379","attempt":0,"error":"rpc error: code = FailedPrecondition desc = etcdserver: authentication is not enabled"}
-Authentication Enabled
-```
-
-[$] Verificando o status do usuário root:
-```bash
-etcdctl \
-  --endpoints=https://192.168.56.10:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/dcs.crt \
-  --key=/etc/dcs/cert/dcs.key \
-  --user root auth status
-```
-```
-Password: 
-Authentication Status: true
-AuthRevision: 7
-```
-
 
 ### Testing
 
 
-[$] Teste com autenticação:
+[$] Criando uma chave:
 ```bash
 etcdctl \
   --endpoints=https://192.168.56.10:2379 \
@@ -431,7 +328,6 @@ etcdctl \
   --cacert=/etc/dcs/cert/ca.crt \
   --cert=/etc/dcs/cert/dcs.crt \
   --key=/etc/dcs/cert/dcs.key \
-  --user root \
   put foo bar
 ```
 
@@ -444,12 +340,10 @@ etcdctl \
   --cacert=/etc/dcs/cert/ca.crt \
   --cert=/etc/dcs/cert/dcs.crt \
   --key=/etc/dcs/cert/dcs.key \
-  --user root \
-  get foo
+  get --print-value-only foo
 ```
 ```
-Password: 
-foo
+. . .
 bar
 ```
 
@@ -486,7 +380,7 @@ ls -lh /var/lib/dcs/backup/
 ```
 ```
 total 24K
--rw------- 1 tux tux 21K Feb 11 16:38 etcd-snapshot.db
+-rw------- 1 tux tux 21K Feb 11 18:39 etcd-snapshot.db
 ```
 
 [$] Parar o serviço etcd:
@@ -507,16 +401,23 @@ sudo etcdutl snapshot restore /var/lib/dcs/backup/etcd-snapshot.db \
   --initial-cluster-token etcd-cluster-0 \
   --initial-advertise-peer-urls https://192.168.56.10:2380
 ```  
+```
+2026-02-11T18:40:12-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-11T18:40:12-03:00	info	membership/store.go:141	Trimming membership information from the backend...
+2026-02-11T18:40:12-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
+2026-02-11T18:40:12-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+```
 
-2026-02-11T16:39:50-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
-2026-02-11T16:39:50-03:00	info	membership/store.go:141	Trimming membership information from the backend...
-2026-02-11T16:39:50-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
-2026-02-11T16:39:50-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
 
 [$] Ajustar propriedade do diretório de dados:
 ```bash
 sudo chown -R etcd:etcd /var/lib/etcd
 ```
+
+> **Observação**
+>
+> O restore é feito como `root`, mas o diretório final precisa pertencer ao
+> usuário `etcd` para que o serviço suba corretamente.
 
 [$] Iniciar o serviço:
 ```bash
@@ -531,12 +432,10 @@ etcdctl \
   --cacert=/etc/dcs/cert/ca.crt \
   --cert=/etc/dcs/cert/dcs.crt \
   --key=/etc/dcs/cert/dcs.key \
-  --user root \
   get foo
 ```
 ```
-Password: 
-foo
+. . .
 bar
 ```
 
@@ -558,7 +457,7 @@ EOF
 source ~/.etcdvars
 ```
 
-[$] A cada login ler aplicar as variáveis de ambiente:
+[$] A cada login, ler e aplicar as variáveis de ambiente:
 ```bash
 cat << EOF >> ~/.bashrc
 
@@ -572,12 +471,12 @@ EOF
 etcdctl get --print-value-only foo
 ```
 ```
-Password: 
+. . .
 bar
 ```
 
 
-export ETCDCTL_PASSWORD='123'
+<!-- export ETCDCTL_PASSWORD='123' -->
 
 
 <!-- ## Replication -->

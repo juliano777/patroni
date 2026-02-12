@@ -61,6 +61,10 @@ sudo apt install -y etcd-{client,server} && sudo apt clean
 
 [$] Arquivo específico para variáveis de ambiente úteis para o etcd:
 ```bash
+# Network interface variable
+read -p 'Specificy the network interface: ' NETIF
+
+# Environment variables file
 cat << EOF > ~/.etcdvars
 # API version (Patroni required version)
 export ETCDCTL_API='3'
@@ -74,9 +78,12 @@ export ETCD_HOSTNAME=\`hostname -s\`
 # Fully Qualified Domain (Host) Name
 export ETCD_FQDN=\`hostname -f\`
 
-# IP
-export ETCD_IP="\`ip -4 addr show enp0s8 | \
-awk '/inet / {print \$2}' | \
+# Network interface
+NETIF='${NETIF}'
+
+# IP address
+export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
+awk '/inet / {print \$2}' | \\
 cut -d/ -f1\`"
 
 EOF
@@ -104,7 +111,7 @@ The services are listening only on localhost.
 [$] Bash completion:
 ```bash
 # Install bash-completion package
-sudo apt install -y bash-completion
+sudo apt install -y bash-completion && sudo apt clean
 
 # Generate the global bash completion script
 sudo bash -c 'etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh'
@@ -161,16 +168,16 @@ sudo chown -R etcd:etcd /etc/dcs
 
 [$] Variáveis de ambiente para chaves e certificados:
 ```bash
-# Chave privada do DCS
+# DCS private key
 KEY="${ETCD_HOSTNAME}.key" 
 
-# CSR do DCS
+# DCS CSR
 CSR="${ETCD_HOSTNAME}.csr"
 
 # Certificado do DCS
 CRT="${ETCD_HOSTNAME}.crt"
 
-# Arquivo SAN
+# SAN file
 SAN="${ETCD_HOSTNAME}.ext"
 ```
 
@@ -232,14 +239,15 @@ sudo chmod 0640 /etc/dcs/cert/${KEY}
 sudo chown -R etcd:etcd /etc/dcs
 ```
 
+
+
 [$] Arquivo de configuração
 ```bash
-cat << EOF > /etc/dcs/etcd
+ cat << EOF > /etc/dcs/etcd
 ETCD_NAME='${ETCD_HOSTNAME}'
 ETCD_DATA_DIR='/var/lib/etcd'
 
 # CLIENT URLs
-# Isso permite que ele aceite conexões em qualquer interface ativa
 ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
 ETCD_ADVERTISE_CLIENT_URLS='https://${ETCD_IP}:2379'
 
@@ -427,6 +435,17 @@ AuthRevision: 5
 ### Testing
 
 
+[$] Variável ETCDCTL_PASSWORD para armazenar senha:
+```bash
+read -sp 'Enter the etcd root user password: ' ETCDCTL_PASSWORD
+export ETCDCTL_PASSWORD
+```
+
+> **Atenção!**
+>
+> Não é recomendado fazer isso em um ambient real.  
+> Apenas para fins didáticos para agilizar os exercícios aqui.
+
 [$] Criando uma chave:
 ```bash
 etcdctl \
@@ -450,7 +469,6 @@ etcdctl \
   get --print-value-only foo
 ```
 ```
-. . .
 bar
 ```
 
@@ -476,7 +494,6 @@ etcdctl \
   snapshot save /var/lib/dcs/backup/etcd-snapshot.db
 ```
 ```
-Password: 
 . . .
 Snapshot saved at /var/lib/dcs/backup/etcd-snapshot.db
 ```
@@ -496,7 +513,7 @@ ls -lh /var/lib/dcs/backup/
 ```
 ```
 total 24K
--rw-r----- 1 etcd etcd 21K Feb 12 11:49 etcd-snapshot.db
+-rw-r----- 1 etcd etcd 21K Feb 12 14:37 etcd-snapshot.db
 ```
 
 [$] Parar o serviço etcd:
@@ -519,10 +536,10 @@ sudo etcdutl snapshot restore /var/lib/dcs/backup/etcd-snapshot.db \
   --initial-advertise-peer-urls https://${ETCD_IP}:2380
 ```  
 ```
-2026-02-12T11:50:49-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
-2026-02-12T11:50:49-03:00	info	membership/store.go:141	Trimming membership information from the backend...
-2026-02-12T11:50:49-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
-2026-02-12T11:50:49-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-12T14:38:20-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-12T14:38:20-03:00	info	membership/store.go:141	Trimming membership information from the backend...
+2026-02-12T14:38:20-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
+2026-02-12T14:38:20-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
 ```
 
 `--initial-cluster` deve conter todos os membros do cluster.  
@@ -555,7 +572,6 @@ etcdctl \
   get --print-value-only foo
 ```
 ```
-. . .
 bar
 ```
 
@@ -597,7 +613,6 @@ source ~/.etcdvars
 etcdctl get --print-value-only foo
 ```
 ```
-. . .
 bar
 ```
 
@@ -605,17 +620,336 @@ bar
 <!-- export ETCDCTL_PASSWORD='123' -->
 
 
+
 ### Replication
 
+
+[dcs-00]
+
+ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
+Generating public/private ed25519 key pair.
+Your identification has been saved in /home/tux/.ssh/id_ed25519
+Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
+The key fingerprint is:
+SHA256:NX4CVOpbdxedLgMq7lvYRZx20kfevRTcm+LNLMczHTA tux@dcs-00.patroni.mydomain
+The key's randomart image is:
++--[ED25519 256]--+
+|        ...   .o.|
+|       . .. oEo.B|
+|        o oB oo**|
+|       . ++.+.++o|
+|       .S.+.+oBo+|
+|      . +o.+ +oX.|
+|       o.o    o o|
+|      . .        |
+|       o.        |
++----[SHA256]-----+
+
+[tux@dcs-00 ~]$ ssh-copy-id 192.168.56.11
+/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
+The authenticity of host '192.168.56.11 (192.168.56.11)' can't be established.
+ED25519 key fingerprint is SHA256:ZrypHRcaWAz5XBwoGrip6dWg7XAsSdF9IiSdbBnsW3o.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
+/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
+tux@192.168.56.11's password: 
+
+Number of key(s) added: 1
+
+Now try logging into the machine, with: "ssh '192.168.56.11'"
+and check to make sure that only the key(s) you wanted were added.
+
+[tux@dcs-00 ~]$ ssh-copy-id 192.168.56.12
+/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
+The authenticity of host '192.168.56.12 (192.168.56.12)' can't be established.
+ED25519 key fingerprint is SHA256:ZrypHRcaWAz5XBwoGrip6dWg7XAsSdF9IiSdbBnsW3o.
+This host key is known by the following other names/addresses:
+    ~/.ssh/known_hosts:1: 192.168.56.11
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
+/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
+tux@192.168.56.12's password: 
+
+Number of key(s) added: 1
+
+Now try logging into the machine, with: "ssh '192.168.56.12'"
+and check to make sure that only the key(s) you wanted were added.
+
+
+sudo tar cvf /tmp/ca.tar /etc/dcs/cert/ca.* 2> /dev/null 
+/etc/dcs/cert/ca.crt
+/etc/dcs/cert/ca.key
+/etc/dcs/cert/ca.srl
+
+scp -O /tmp/ca.tar 192.168.56.11:/tmp/
+
+scp -O /tmp/ca.tar 192.168.56.12:/tmp/
+
+
+ssh 192.168.56.11 'sudo gpasswd -a `whoami` etcd > /dev/null'
+ssh 192.168.56.12 'sudo gpasswd -a `whoami` etcd > /dev/null'
+
+
+
+[outros]
+
+sudo tar xvf /tmp/ca.tar -C /
+etc/dcs/cert/ca.crt
+etc/dcs/cert/ca.key
+etc/dcs/cert/ca.srl
+
+
+[$] Script de configuração automatizada:
 ```bash
+touch /tmp/setup-etcd-node.sh && \
+chmod +x /tmp/setup-etcd-node.sh && \
+vim /tmp/setup-etcd-node.sh
+```
+```
+#!/bin/bash
+
+# Stop etcd service
+sudo systemctl stop etcd
+
+# How many nodes?
+read -rp 'How many nodes already exist in the cluster? ' NNODES
+
+# Current node + number of pre-existing nodes
+NNODES="$((${NNODES} + 1))"
+
+# Empty variable
+ETCD_INITIAL_CLUSTER=''
+
+# Loop
+for (( i=0; i<NNODES; i++ )); do
+  echo
+  read -rp "Specify node #$i (ex: dcs-00=https://192.168.56.10:2380): " NODE
+
+  if [[ -z "${ETCD_INITIAL_CLUSTER}" ]]; then
+    ETCD_INITIAL_CLUSTER="${NODE}"
+  else
+    ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER},${NODE}"
+  fi
+done
+
+# Network interface variable
+read -p 'Specificy the network interface: ' NETIF
+
+sudo rm -rf /var/lib/etcd
+sudo mkdir -m 0700 /var/lib/etcd
+sudo chown etcd:etcd /var/lib/etcd
+
+sudo tar xf /tmp/ca.tar -C /
+
+# Update repositories
+sudo apt update &> /dev/null
+
+# Installation and then clean up the downloaded packages
+sudo apt install -y etcd-{client,server} bash-completion &> /dev/null  && \
+sudo apt clean
+
+
+# Environment variables file
+cat << EOF > ~/.etcdvars
+# API version (Patroni required version)
+export ETCDCTL_API='3'
+
+# Log level
+export ETCD_LOG_LEVEL='error'
+
+# Hostname
+export ETCD_HOSTNAME=\`hostname -s\`
+
+# Fully Qualified Domain (Host) Name
+export ETCD_FQDN=\`hostname -f\`
+
+# Network interface
+NETIF='${NETIF}'
+
+# IP address
+export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
+awk '/inet / {print \$2}' | \\
+cut -d/ -f1\`"
+
+EOF
+
+cat << EOF >> ~/.bashrc
+
+# Read etcd environment variables file
+source ~/.etcdvars
+EOF
+
+
+# Read etcd environment variables file immediately
+source ~/.etcdvars
+
+# Generate the global bash completion script
+sudo bash -c 'etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh'
+
+KEY="${ETCD_HOSTNAME}.key" 
+
+# DCS CSR
+CSR="${ETCD_HOSTNAME}.csr"
+
+# Certificado do DCS
+CRT="${ETCD_HOSTNAME}.crt"
+
+# SAN file
+SAN="${ETCD_HOSTNAME}.ext"
+
+# Geração da chave privada do DCS
+sudo openssl genrsa -out /etc/dcs/cert/${KEY} 4096
+
+# Geração da CSR do DCS
+sudo openssl req -new \
+  -key /etc/dcs/cert/${KEY} \
+  -subj "/CN=${ETCD_HOSTNAME}" \
+  -out /etc/dcs/cert/${CSR}
+
+# Criar um arquivo de extensão SAN
+sudo bash -c "cat << EOF > /etc/dcs/cert/${SAN}
+subjectAltName = @alt_names
+
+[alt_names]
+IP.1 = ${ETCD_IP}
+IP.2 = 127.0.0.1
+DNS.1 = localhost
+DNS.2 = ${ETCD_HOSTNAME}
+DNS.3 = ${ETCD_FQDN}
+EOF"
+
+
+# Assinatura do certificado do DCS pela CA
+sudo openssl x509 -req \
+  -in /etc/dcs/cert/${CSR} \
+  -CA /etc/dcs/cert/ca.crt \
+  -CAkey /etc/dcs/cert/ca.key \
+  -CAcreateserial \
+  -out /etc/dcs/cert/${CRT} \
+  -days 3650 \
+  -extfile /etc/dcs/cert/${SAN} &> /dev/null
+  
+sudo chmod 0600 /etc/dcs/cert/ca.key
+sudo chmod 0640 /etc/dcs/cert/*.crt
+sudo chmod 0640 /etc/dcs/cert/${KEY}
+sudo chown -R etcd:etcd /etc/dcs
+
+ cat << EOF > /etc/dcs/etcd
+ETCD_NAME='${ETCD_HOSTNAME}'
+ETCD_DATA_DIR='/var/lib/etcd'
+
+# CLIENT URLs
+ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
+ETCD_ADVERTISE_CLIENT_URLS='https://${ETCD_IP}:2379'
+
+# PEER URLs
+ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
+ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
+
+# O restante do arquivo permanece IGUAL
+ETCD_INITIAL_CLUSTER='${ETCD_INITIAL_CLUSTER}'
+ETCD_INITIAL_CLUSTER_STATE='existing'
+ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
+
+# TLS – CLIENT
+ETCD_CERT_FILE='/etc/dcs/cert/${CRT}'
+ETCD_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+ETCD_CLIENT_CERT_AUTH='true'
+
+# TLS – PEER
+ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
+ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+ETCD_PEER_CLIENT_CERT_AUTH='true'
+EOF
+
+sudo ln -sf /etc/dcs/etcd /etc/default/etcd
+
+sudo systemctl restart etcd
+
+```
+
+[$] Executar o script:
+```bash
+/tmp/setup-etcd-node.sh
+```
 
 
 
+dcs-00=https://192.168.56.10:2380
+dcs-01=https://192.168.56.11:2380
+dcs-02=https://192.168.56.12:2380
+
+
+
+<!--
+
+1️⃣ Preparação dos nós dcs-01 e dcs-02
+
+Em cada novo nó (dcs-01 e depois dcs-02):
+
+✔ Instalação
+
+Repita exatamente:
+
+Instalação do etcd
+
+Criação de ~/.etcdvars
+
+Configuração de TLS
+
+Criação dos certificados com CN correspondente ao hostname
+
+Permissões e ownership
+
+
+
+
+Nó `dcs-00`:
+
+```bash
+#
+etcdctl endpoint status --write-out=table
+
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|          ENDPOINT          |       ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+| https://192.168.56.10:2379 | 8cc5336ad7ebe6b |  3.5.16 |   20 kB |      true |      false |         2 |         20 |                 20 |        |
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+
+
+#
+etcdctl member list
+8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
+
+# 
 etcdctl member add dcs-01 \
   --peer-urls=https://192.168.56.11:2380
 
+
+Member 52206918db3e2f4a added to cluster 34dc187f8d1c6d63
+
+ETCD_NAME="dcs-01"
+ETCD_INITIAL_CLUSTER="dcs-00=https://192.168.56.10:2380,dcs-01=https://192.168.56.11:2380"
+ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.56.11:2380"
+ETCD_INITIAL_CLUSTER_STATE="existing"  
+
+
+
+
+  
+
 etcdctl member add dcs-02 \
   --peer-urls=https://192.168.56.12:2380
+
+
+
+
+
+#
+etcdctl member list
 
 #
 ETCD_INITIAL_CLUSTER="\
@@ -636,7 +970,7 @@ sed \
 -i /etc/dcs/etcd
 ```
 
-
+-->
 
 <!-- --------------------------------------------------------------------- -->
 

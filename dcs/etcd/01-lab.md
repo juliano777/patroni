@@ -835,7 +835,7 @@ sudo chmod 0640 /etc/dcs/cert/*.crt
 sudo chmod 0640 /etc/dcs/cert/${KEY}
 sudo chown -R etcd:etcd /etc/dcs
 
- cat << EOF > /etc/dcs/etcd
+ sudo bash -c "cat << EOF > /etc/dcs/etcd
 ETCD_NAME='${ETCD_HOSTNAME}'
 ETCD_DATA_DIR='/var/lib/etcd'
 
@@ -863,10 +863,12 @@ ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
 ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
 ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
 ETCD_PEER_CLIENT_CERT_AUTH='true'
-EOF
+EOF"
 
+# 
 sudo ln -sf /etc/dcs/etcd /etc/default/etcd
 
+# 
 sudo systemctl restart etcd
 
 ```

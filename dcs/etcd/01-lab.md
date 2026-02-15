@@ -756,7 +756,7 @@ ssh 192.168.56.12 'sudo gpasswd -a `whoami` etcd > /dev/null'
 
 
 
-[$] Script de configuração automatizada:
+[$][dcs-01/02] Script de configuração automatizada:
 ```bash
 touch /tmp/setup-etcd-node.sh && \
 chmod +x /tmp/setup-etcd-node.sh && \

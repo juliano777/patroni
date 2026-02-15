@@ -24,6 +24,10 @@ for (( i=0; i<NNODES; i++ )); do
   fi
 done
 
+# dcs-00=https://192.168.56.10:2380
+# dcs-01=https://192.168.56.11:2380
+
+
 # Network interface variable
 read -p 'Specificy the network interface: ' NETIF
 
@@ -42,7 +46,7 @@ sudo apt clean
 
 
 # Environment variables file
-cat << EOF > ~/.etcdvars
+ cat << EOF > ~/.etcdvars
 # API version (Patroni required version)
 export ETCDCTL_API='3'
 
@@ -63,21 +67,6 @@ export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
 awk '/inet / {print \$2}' | \\
 cut -d/ -f1\`"
 
-# The comma-separated list of etcd endpoints
-export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
-
-# The CA certificate file used to verify the server
-export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
-
-# The client certificate file for TLS authentication
-export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
-
-# The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
-
-# The username for etcd authentication (Role-Based Access Control)
-export ETCDCTL_USER='root'
-
 EOF
 
 cat << EOF >> ~/.bashrc
@@ -93,6 +82,7 @@ source ~/.etcdvars
 # Generate the global bash completion script
 sudo bash -c 'etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh'
 
+
 KEY="${ETCD_HOSTNAME}.key" 
 
 # DCS CSR
@@ -103,6 +93,28 @@ CRT="${ETCD_HOSTNAME}.crt"
 
 # SAN file
 SAN="${ETCD_HOSTNAME}.ext"
+
+
+# Environment variables file
+ cat << EOF >> ~/.etcdvars
+# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
+
+# The CA certificate file used to verify the server
+export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
+
+# The client certificate file for TLS authentication
+export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
+
+# The client private key file for TLS authentication
+export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
+
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'
+EOF
+
+# Read etcd environment variables file immediately
+source ~/.etcdvars
 
 # Geração da chave privada do DCS
 sudo openssl genrsa -out /etc/dcs/cert/${KEY} 4096
@@ -126,16 +138,7 @@ DNS.3 = ${ETCD_FQDN}
 EOF"
 
 
-# Assinatura do certificado do DCS pela CA
-sudo openssl x509 -req \
-  -in /etc/dcs/cert/${CSR} \
-  -CA /etc/dcs/cert/ca.crt \
-  -CAkey /etc/dcs/cert/ca.key \
-  -CAcreateserial \
-  -out /etc/dcs/cert/${CRT} \
-  -days 3650 \
-  -extfile /etc/dcs/cert/${SAN} &> /dev/null
-  
+ 
 sudo chmod 0600 /etc/dcs/cert/ca.key
 sudo chmod 0640 /etc/dcs/cert/*.crt
 sudo chmod 0640 /etc/dcs/cert/${KEY}
@@ -175,4 +178,4 @@ EOF"
 sudo ln -sf /etc/dcs/etcd /etc/default/etcd
 
 # 
-sudo systemctl restart etcd
+sudo systemctl start etcd

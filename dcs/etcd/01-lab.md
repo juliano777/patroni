@@ -619,14 +619,18 @@ bar
 
 <!-- export ETCDCTL_PASSWORD='123' -->
 
-
+<!--
 
 ### Replication
 
 
 [dcs-00]
 
+[$] Generate SSH key:
+```bash
 ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
+```
+```
 Generating public/private ed25519 key pair.
 Your identification has been saved in /home/tux/.ssh/id_ed25519
 Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
@@ -644,60 +648,62 @@ The key's randomart image is:
 |      . .        |
 |       o.        |
 +----[SHA256]-----+
+```
 
-[tux@dcs-00 ~]$ ssh-copy-id 192.168.56.11
+[$] Send the generated key to the other nodes:
+```bash
+ssh-copy-id -o StrictHostKeyChecking=accept-new 192.168.56.11
+```
+```
 /usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
-The authenticity of host '192.168.56.11 (192.168.56.11)' can't be established.
-ED25519 key fingerprint is SHA256:ZrypHRcaWAz5XBwoGrip6dWg7XAsSdF9IiSdbBnsW3o.
-This key is not known by any other names.
-Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
 /usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
 /usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
 tux@192.168.56.11's password: 
 
 Number of key(s) added: 1
 
-Now try logging into the machine, with: "ssh '192.168.56.11'"
+Now try logging into the machine, with: "ssh -o 'StrictHostKeyChecking=accept-new' '192.168.56.11'"
 and check to make sure that only the key(s) you wanted were added.
-
-[tux@dcs-00 ~]$ ssh-copy-id 192.168.56.12
+```
+```bash
+ssh-copy-id -o StrictHostKeyChecking=accept-new 192.168.56.12
+```
+```
 /usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
-The authenticity of host '192.168.56.12 (192.168.56.12)' can't be established.
-ED25519 key fingerprint is SHA256:ZrypHRcaWAz5XBwoGrip6dWg7XAsSdF9IiSdbBnsW3o.
-This host key is known by the following other names/addresses:
-    ~/.ssh/known_hosts:1: 192.168.56.11
-Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
 /usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
 /usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
 tux@192.168.56.12's password: 
 
 Number of key(s) added: 1
 
-Now try logging into the machine, with: "ssh '192.168.56.12'"
+Now try logging into the machine, with: "ssh -o 'StrictHostKeyChecking=accept-new' '192.168.56.12'"
 and check to make sure that only the key(s) you wanted were added.
+```
 
-
-sudo tar cvf /tmp/ca.tar /etc/dcs/cert/ca.* 2> /dev/null 
+[$] Create a tar file containing all CA files:
+```bash
+sudo tar cvf /tmp/ca.tar /etc/dcs/cert/ca.* 2> /dev/null
+```
+```
 /etc/dcs/cert/ca.crt
 /etc/dcs/cert/ca.key
 /etc/dcs/cert/ca.srl
+```
 
+[$] Send the tar file to the other nodes:
+```bash
+# dcs-01
 scp -O /tmp/ca.tar 192.168.56.11:/tmp/
 
+# dcs-02
 scp -O /tmp/ca.tar 192.168.56.12:/tmp/
-
-
+```
+```
 ssh 192.168.56.11 'sudo gpasswd -a `whoami` etcd > /dev/null'
 ssh 192.168.56.12 'sudo gpasswd -a `whoami` etcd > /dev/null'
+```
 
 
-
-[outros]
-
-sudo tar xvf /tmp/ca.tar -C /
-etc/dcs/cert/ca.crt
-etc/dcs/cert/ca.key
-etc/dcs/cert/ca.srl
 
 
 [$] Script de configuração automatizada:
@@ -706,171 +712,34 @@ touch /tmp/setup-etcd-node.sh && \
 chmod +x /tmp/setup-etcd-node.sh && \
 vim /tmp/setup-etcd-node.sh
 ```
-```
-#!/bin/bash
+```bash
+# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
 
-# Stop etcd service
-sudo systemctl stop etcd
+# The CA certificate file used to verify the server
+export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
 
-# How many nodes?
-read -rp 'How many nodes already exist in the cluster? ' NNODES
+# The client certificate file for TLS authentication
+export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
 
-# Current node + number of pre-existing nodes
-NNODES="$((${NNODES} + 1))"
+# The client private key file for TLS authentication
+export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
 
-# Empty variable
-ETCD_INITIAL_CLUSTER=''
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
 
-# Loop
-for (( i=0; i<NNODES; i++ )); do
-  echo
-  read -rp "Specify node #$i (ex: dcs-00=https://192.168.56.10:2380): " NODE
+# The CA certificate file used to verify the server
+export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
 
-  if [[ -z "${ETCD_INITIAL_CLUSTER}" ]]; then
-    ETCD_INITIAL_CLUSTER="${NODE}"
-  else
-    ETCD_INITIAL_CLUSTER="${ETCD_INITIAL_CLUSTER},${NODE}"
-  fi
-done
+# The client certificate file for TLS authentication
+export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
 
-# Network interface variable
-read -p 'Specificy the network interface: ' NETIF
+# The client private key file for TLS authentication
+export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
 
-sudo rm -rf /var/lib/etcd
-sudo mkdir -m 0700 /var/lib/etcd
-sudo chown etcd:etcd /var/lib/etcd
-
-sudo tar xf /tmp/ca.tar -C /
-
-# Update repositories
-sudo apt update &> /dev/null
-
-# Installation and then clean up the downloaded packages
-sudo apt install -y etcd-{client,server} bash-completion &> /dev/null  && \
-sudo apt clean
-
-
-# Environment variables file
-cat << EOF > ~/.etcdvars
-# API version (Patroni required version)
-export ETCDCTL_API='3'
-
-# Log level
-export ETCD_LOG_LEVEL='error'
-
-# Hostname
-export ETCD_HOSTNAME=\`hostname -s\`
-
-# Fully Qualified Domain (Host) Name
-export ETCD_FQDN=\`hostname -f\`
-
-# Network interface
-NETIF='${NETIF}'
-
-# IP address
-export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
-awk '/inet / {print \$2}' | \\
-cut -d/ -f1\`"
-
-EOF
-
-cat << EOF >> ~/.bashrc
-
-# Read etcd environment variables file
-source ~/.etcdvars
-EOF
-
-
-# Read etcd environment variables file immediately
-source ~/.etcdvars
-
-# Generate the global bash completion script
-sudo bash -c 'etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh'
-
-KEY="${ETCD_HOSTNAME}.key" 
-
-# DCS CSR
-CSR="${ETCD_HOSTNAME}.csr"
-
-# Certificado do DCS
-CRT="${ETCD_HOSTNAME}.crt"
-
-# SAN file
-SAN="${ETCD_HOSTNAME}.ext"
-
-# Geração da chave privada do DCS
-sudo openssl genrsa -out /etc/dcs/cert/${KEY} 4096
-
-# Geração da CSR do DCS
-sudo openssl req -new \
-  -key /etc/dcs/cert/${KEY} \
-  -subj "/CN=${ETCD_HOSTNAME}" \
-  -out /etc/dcs/cert/${CSR}
-
-# Criar um arquivo de extensão SAN
-sudo bash -c "cat << EOF > /etc/dcs/cert/${SAN}
-subjectAltName = @alt_names
-
-[alt_names]
-IP.1 = ${ETCD_IP}
-IP.2 = 127.0.0.1
-DNS.1 = localhost
-DNS.2 = ${ETCD_HOSTNAME}
-DNS.3 = ${ETCD_FQDN}
-EOF"
-
-
-# Assinatura do certificado do DCS pela CA
-sudo openssl x509 -req \
-  -in /etc/dcs/cert/${CSR} \
-  -CA /etc/dcs/cert/ca.crt \
-  -CAkey /etc/dcs/cert/ca.key \
-  -CAcreateserial \
-  -out /etc/dcs/cert/${CRT} \
-  -days 3650 \
-  -extfile /etc/dcs/cert/${SAN} &> /dev/null
-  
-sudo chmod 0600 /etc/dcs/cert/ca.key
-sudo chmod 0640 /etc/dcs/cert/*.crt
-sudo chmod 0640 /etc/dcs/cert/${KEY}
-sudo chown -R etcd:etcd /etc/dcs
-
- sudo bash -c "cat << EOF > /etc/dcs/etcd
-ETCD_NAME='${ETCD_HOSTNAME}'
-ETCD_DATA_DIR='/var/lib/etcd'
-
-# CLIENT URLs
-ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
-ETCD_ADVERTISE_CLIENT_URLS='https://${ETCD_IP}:2379'
-
-# PEER URLs
-ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
-ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
-
-# O restante do arquivo permanece IGUAL
-ETCD_INITIAL_CLUSTER='${ETCD_INITIAL_CLUSTER}'
-ETCD_INITIAL_CLUSTER_STATE='existing'
-ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
-
-# TLS – CLIENT
-ETCD_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_KEY_FILE='/etc/dcs/cert/${KEY}'
-ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
-ETCD_CLIENT_CERT_AUTH='true'
-
-# TLS – PEER
-ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
-ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
-ETCD_PEER_CLIENT_CERT_AUTH='true'
-EOF"
-
-# 
-sudo ln -sf /etc/dcs/etcd /etc/default/etcd
-
-# 
-sudo systemctl restart etcd
-
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'
 ```
 
 [$] Executar o script:
@@ -884,7 +753,7 @@ dcs-00=https://192.168.56.10:2380
 dcs-01=https://192.168.56.11:2380
 dcs-02=https://192.168.56.12:2380
 
-
+-->
 
 <!--
 

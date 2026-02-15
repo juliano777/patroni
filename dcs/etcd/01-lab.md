@@ -619,12 +619,62 @@ bar
 
 <!-- export ETCDCTL_PASSWORD='123' -->
 
-<!--
+
 
 ### Replication
 
 
 [dcs-00]
+
+[$] ???:
+```bash
+etcdctl endpoint status --write-out=table
+```
+```
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|          ENDPOINT          |       ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+| https://192.168.56.10:2379 | 8cc5336ad7ebe6b |  3.5.16 |   20 kB |      true |      false |         2 |         16 |                 16 |        |
++----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+```
+
+- IS_LEADER = true
+- sem erros
+- DB size estável
+
+
+[$] ???:
+```bash
+etcdctl member list
+```
+```
+8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
+```
+
+
+etcdctl member add dcs-01 \
+  --peer-urls=https://192.168.56.11:2380
+Member 3428d5b90fd92915 added to cluster 34dc187f8d1c6d63
+
+ETCD_NAME="dcs-01"
+ETCD_INITIAL_CLUSTER="dcs-00=https://192.168.56.10:2380,dcs-01=https://192.168.56.11:2380"
+ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.56.11:2380"
+ETCD_INITIAL_CLUSTER_STATE="existing"
+
+
+Gera um ID de membro
+
+Reserva o nome dcs-01
+
+Associa o endereço de peer (2380)
+
+Atualiza o Raft membership
+
+
+⚠️ Essa saída não é informativa — ela é prescritiva.
+Ela diz exatamente como o próximo nó deve ser configurado.
+
+
 
 [$] Generate SSH key:
 ```bash

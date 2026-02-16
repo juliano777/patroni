@@ -663,11 +663,8 @@ ETCD_INITIAL_CLUSTER_STATE="existing"
 
 
 Gera um ID de membro
-
 Reserva o nome dcs-01
-
 Associa o endereço de peer (2380)
-
 Atualiza o Raft membership
 
 
@@ -730,28 +727,137 @@ Now try logging into the machine, with: "ssh -o 'StrictHostKeyChecking=accept-ne
 and check to make sure that only the key(s) you wanted were added.
 ```
 
-[$] Create a tar file containing all CA files:
+
+[$] Confirme se ${HOME}/bin e crie o diretório:
 ```bash
-sudo tar cvf /tmp/ca.tar /etc/dcs/cert/ca.* 2> /dev/null
+if (echo $PATH | grep --color=auto "${HOME}/bin"); then
+  mkdir ${HOME}/bin 2> /dev/null;
+else
+  echo -e 'Error!: \nPlease, include ${HOME}/bin in your ${HOME} variable'
+fi
 ```
+[$] Criação do script de:
+```bash
+vim ${HOME}/bin/etcd-sign-node.sh && chmod +x ${HOME}/bin/etcd-sign-node.sh
 ```
-/etc/dcs/cert/ca.crt
-/etc/dcs/cert/ca.key
-/etc/dcs/cert/ca.srl
+```bash
+#!/bin/bash
+# etcd-sign-node.sh
+set -euo pipefail
+
+NODE_FQDN="${1}"
+NODE_IP="${2}"
+
+
+NODE_NAME="`echo ${NODE_FQDN} | cut -f1 -d.`"
+CERT_DIR='/etc/dcs/cert'
+OUT_DIR="/tmp/${NODE_NAME}-certs"
+
+mkdir -p "${OUT_DIR}"
+
+KEY="${OUT_DIR}/${NODE_NAME}.key"
+CSR="${OUT_DIR}/${NODE_NAME}.csr"
+CRT="${OUT_DIR}/${NODE_NAME}.crt"
+EXT="${OUT_DIR}/${NODE_NAME}.ext"
+
+echo "[+] Gerando chave privada"
+openssl genrsa -out "${KEY}" 4096
+
+echo "[+] Criando CSR"
+openssl req -new -key "${KEY}" -out "${CSR}" \
+  -subj "/CN=${NODE_NAME}"
+
+echo "[+] Criando arquivo de extensões"
+cat > "${EXT}" <<EOF
+[v3_req]
+subjectAltName = @alt_names
+extendedKeyUsage = serverAuth,clientAuth
+
+[alt_names]
+DNS.1 = ${NODE_NAME}
+DNS.2 = ${NODE_FQDN}
+IP.1  = ${NODE_IP}
+IP.2  = 127.0.0.1
+EOF
+
+echo "[+] Assinando certificado com a CA"
+sudo openssl x509 -req \
+  -in "${CSR}" \
+  -CA "${CERT_DIR}/ca.crt" \
+  -CAkey "${CERT_DIR}/ca.key" \
+  -CAcreateserial \
+  -out "${CRT}" \
+  -days 365 \
+  -extensions v3_req \
+  -extfile "${EXT}"
+
+echo "[+] Copiando ca.crt"
+cp "${CERT_DIR}/ca.crt" "${OUT_DIR}/"
+
+echo "[+] Criando tar para envio"
+tar -cf /tmp/${NODE_NAME}.tar \
+  ${OUT_DIR}/${NODE_NAME}.crt \
+  ${OUT_DIR}/${NODE_NAME}.key \
+  ${OUT_DIR}/ca.crt
+
+echo "[✔] Certificados prontos:"
+echo "    /tmp/${NODE_NAME}.tar"
+
+echo "[+] Eviando certificados para o nó..."
+scp -O /tmp/${NODE_NAME}.tar ${NODE_IP}:/tmp/
+
+echo "[+] Descompactando o tar"
+ssh ${NODE_IP} "tar xf /tmp/${NODE_NAME}.tar -C /"
+
+
+echo "[+] Criação de diretório de certificados"
+ssh ${NODE_IP} "sudo mkdir -pm 0770 /etc/dcs/cert && \
+  sudo chmod 0770 /etc/dcs"
+
+echo "[+] Mover certificados,ajustar propriedade e permissões"
+ssh ${NODE_IP} "sudo mv ${OUT_DIR}/* /etc/dcs/cert && \
+  sudo chown -R etcd:etcd /etc/dcs && \
+  sudo chmod 0640 /etc/dcs/cert/*"
+
+echo "[✔] Certificados enviados para a localização correta!"  
+
 ```
 
-[$] Send the tar file to the other nodes:
+[$] Criação do script de:
 ```bash
-# dcs-01
-scp -O /tmp/ca.tar 192.168.56.11:/tmp/
+etcd-sign-node.sh dcs-01.patroni.mydomain 192.168.56.11
+```
+```
+[+] Gerando chave privada
+[+] Criando CSR
+[+] Criando arquivo de extensões
+[+] Assinando certificado com a CA
+Certificate request self-signature ok
+subject=CN=dcs-01
+[+] Copiando ca.crt
+[+] Criando tar para envio
+tar: Removing leading `/' from member names
+tar: Removing leading `/' from hard link targets
+[✔] Certificados prontos:
+    /tmp/dcs-01.tar
+[+] Eviando certificados para o nó...
+dcs-01.tar                                                                                                                                                                       100%   10KB  13.4MB/s   00:00    
+[+] Descompactando o tar
+[+] Criação de diretório de certificados
+[+] Mover certificados,ajustar propriedade e permissões
+[✔] Certificados enviados para a localização correta!
+```
 
-# dcs-02
-scp -O /tmp/ca.tar 192.168.56.12:/tmp/
-```
-```
-ssh 192.168.56.11 'sudo gpasswd -a `whoami` etcd > /dev/null'
-ssh 192.168.56.12 'sudo gpasswd -a `whoami` etcd > /dev/null'
-```
+
+
+
+
+
+
+
+
+
+
 
 
 

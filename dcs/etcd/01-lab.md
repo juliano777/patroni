@@ -59,9 +59,14 @@ sudo apt update
 sudo apt install -y etcd-{client,server} && sudo apt clean
 ```
 
+[$] Stop etcd service:
+```bash
+sudo systemctl stop etcd
+```
+
 [$] Configure /etc/hosts:
 ```bash
-cat << EOF > /etc/hosts
+ sudo bash -c 'cat << EOF > /etc/hosts
 127.0.0.1	localhost
 127.0.1.1	myhost.patroni.mydomain	myhost
 
@@ -80,7 +85,7 @@ cat << EOF > /etc/hosts
 192.168.56.70  db-00.patroni.mydomain       db-00
 192.168.56.71  db-01.patroni.mydomain       db-01
 192.168.56.72  db-02.patroni.mydomain       db-02
-EOF
+EOF'
 ```
 
 
@@ -123,15 +128,10 @@ source ~/.etcdvars
 EOF
 ```
 
-[$] Check etcd ports:
+[$] Read etcd environment variables file:
 ```bash
-sudo ss -nltp | grep etcd
+source ~/.etcdvars
 ```
-```
-LISTEN 0      4096       127.0.0.1:2379      0.0.0.0:*    users:(("etcd",pid=639,fd=6))
-LISTEN 0      4096       127.0.0.1:2380      0.0.0.0:*    users:(("etcd",pid=639,fd=3))
-```
-The services are listening only on localhost.
 
 [$] Bash completion:
 ```bash
@@ -150,48 +150,11 @@ sudo gpasswd -a `whoami` etcd
 Adding user tux to group etcd
 ```
 
-[$] Verificar grupos do usuário:
-```bash
-groups | tr ' ' '\n' | grep etcd
-```
-Sem retorno, `etcd` ainda não consta.\
-É preciso logar novamente.
 
-> **Observação**
->
-> Neste ponto é preciso sair e se conectar de novo.
+### etcd configuration
 
-[$] Após logar novamente, checar grupos do usuário:
-```bash
-groups | tr ' ' '\n' | grep etcd
-```
-```
-etcd
-```
-
-### TLS
-
-Para garantir a segurança do *cluster*, configuraremos o TLS
-(*Transport Layer Security*).  
-O etcd suporta criptografia tanto para a comunicação cliente-servidor quanto
-para *peer-to-peer* (nós do *cluster* conversando entre si).  
-Criaremos uma autoridade certificadora (CA) própria para assinar os
-certificados. Isso garante que apenas os nós e clientes que possuam um
-certificado assinado por essa CA possam se comunicar com o *cluster*,
-prevenindo acessos não autorizados e interceptação de dados.
-
-[$] Criar diretório de configuração e certificados:
-```bash
-# Criar diretórios e ajustar permissões
-sudo mkdir -pm 0770 /etc/dcs/cert && sudo chmod 0770 /etc/dcs
-```
-
-[$] Ajuste de propriedade do diretório /etc/dcs:
-```bash
-sudo chown -R etcd:etcd /etc/dcs
-```
-
-[$] Variáveis de ambiente para chaves e certificados:
+[$] Environment variables for keys and certificates, which will be used in
+the configuration and later to generate certificates and keys:
 ```bash
 # DCS private key
 KEY="${ETCD_HOSTNAME}.key" 
@@ -206,29 +169,94 @@ CRT="${ETCD_HOSTNAME}.crt"
 SAN="${ETCD_HOSTNAME}.ext"
 ```
 
+[$] Ajuste da variável ETCD_INITIAL_CLUSTER, que contém informações dos nós:
+```bash
+ETCD_INITIAL_CLUSTER="\
+dcs-00=https://192.168.56.10:2380,\
+dcs-01=https://192.168.56.11:2380,\
+dcs-02=https://192.168.56.12:2380\
+"
+```
+
+[$] Criar diretório de configuração e certificados:
+```bash
+# Criar diretórios e ajustar permissões
+sudo mkdir -pm 0770 /etc/dcs/cert && sudo chmod 0770 /etc/dcs
+```
+
+[$] Arquivo de configuração
+```bash
+ sudo bash -c "cat << EOF > /etc/dcs/etcd
+ETCD_NAME='${ETCD_HOSTNAME}'
+ETCD_DATA_DIR='/var/lib/etcd'
+
+# CLIENT URLs
+ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
+ETCD_ADVERTISE_CLIENT_URLS='http://${ETCD_IP}:2379,http://127.0.0.1:2379'
+
+# PEER URLs
+ETCD_LISTEN_PEER_URLS='https://${ETCD_IP}:2380'
+ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
+
+# O restante do arquivo permanece IGUAL
+ETCD_INITIAL_CLUSTER='${ETCD_INITIAL_CLUSTER}'
+ETCD_INITIAL_CLUSTER_STATE='new'
+ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
+
+# TLS – CLIENT
+ETCD_CERT_FILE='/etc/dcs/cert/${CRT}'
+ETCD_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+ETCD_CLIENT_CERT_AUTH='true'
+
+# TLS – PEER
+ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
+ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+ETCD_PEER_CLIENT_CERT_AUTH='true'
+EOF"
+```
+
+[$] Criar link em /etc/default/etcd:
+```bash
+sudo ln -sf /etc/dcs/etcd /etc/default/etcd
+```
+
+### TLS
+
+Para garantir a segurança do *cluster*, configuraremos o TLS
+(*Transport Layer Security*).  
+O etcd suporta criptografia tanto para a comunicação cliente-servidor quanto
+para *peer-to-peer* (nós do *cluster* conversando entre si).  
+Criaremos uma autoridade certificadora (CA) própria para assinar os
+certificados. Isso garante que apenas os nós e clientes que possuam um
+certificado assinado por essa CA possam se comunicar com o *cluster*,
+prevenindo acessos não autorizados e interceptação de dados.
+
+
 [$] Chaves e certificados necessários:
 ```bash
 # Gerar chave privada da CA
-openssl genrsa -out /etc/dcs/cert/ca.key 4096
+sudo openssl genrsa -out /etc/dcs/cert/ca.key 4096
 
 # Gerar certificado da CA
-openssl req -x509 -new -nodes \
+sudo openssl req -x509 -new -nodes \
   -key /etc/dcs/cert/ca.key \
   -subj '/CN=dcs-ca' \
   -days 3650 \
   -out /etc/dcs/cert/ca.crt
 
 # Geração da chave privada do DCS
-openssl genrsa -out /etc/dcs/cert/${KEY} 4096
+sudo openssl genrsa -out /etc/dcs/cert/${KEY} 4096
 
 # Geração da CSR do DCS
-openssl req -new \
+sudo openssl req -new \
   -key /etc/dcs/cert/${KEY} \
   -subj "/CN=${ETCD_HOSTNAME}" \
   -out /etc/dcs/cert/${CSR}
 
 # Criar um arquivo de extensão SAN
-cat << EOF > /etc/dcs/cert/${SAN}
+sudo bash -c "cat << EOF > /etc/dcs/cert/${SAN}
 subjectAltName = @alt_names
 
 [alt_names]
@@ -237,11 +265,11 @@ IP.2 = 127.0.0.1
 DNS.1 = localhost
 DNS.2 = ${ETCD_HOSTNAME}
 DNS.3 = ${ETCD_FQDN}
-EOF
+EOF"
 
 
 # Assinatura do certificado do DCS pela CA
-openssl x509 -req \
+sudo openssl x509 -req \
   -in /etc/dcs/cert/${CSR} \
   -CA /etc/dcs/cert/ca.crt \
   -CAkey /etc/dcs/cert/ca.key \
@@ -258,55 +286,122 @@ subject=CN=dcs-00
 
 [$] Ajustes de permissões e propriedade:
 ```bash
-sudo chmod 0600 /etc/dcs/cert/ca.key
-sudo chmod 0640 /etc/dcs/cert/*.crt
-sudo chmod 0640 /etc/dcs/cert/${KEY}
-sudo chown -R etcd:etcd /etc/dcs
+sudo bash -c "chmod 0600 /etc/dcs/cert/ca.key && \
+chmod 0640 /etc/dcs/cert/*.crt /etc/dcs/cert/${KEY} && \
+chown -R etcd:etcd /etc/dcs"
 ```
 
-
-
-[$] Arquivo de configuração
+<!--
+[$] Creating a tar archive for sending:
 ```bash
- cat << EOF > /etc/dcs/etcd
-ETCD_NAME='${ETCD_HOSTNAME}'
-ETCD_DATA_DIR='/var/lib/etcd'
+tar -cf /tmp/${NODE_NAME}.tar \
+  ${OUT_DIR}/${NODE_NAME}.crt \
+  ${OUT_DIR}/${NODE_NAME}.key \
+  ${OUT_DIR}/ca.crt
+```
+-->
 
-# CLIENT URLs
-ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
-ETCD_ADVERTISE_CLIENT_URLS='https://${ETCD_IP}:2379'
 
-# PEER URLs
-ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
-ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
+mkdir /tmp/cert
 
-# O restante do arquivo permanece IGUAL
-ETCD_INITIAL_CLUSTER='${ETCD_HOSTNAME}=https://${ETCD_IP}:2380'
-ETCD_INITIAL_CLUSTER_STATE='new'
-ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
+sudo cp -v /etc/dcs/cert/ca.crt /tmp/cert/
 
-# TLS – CLIENT
-ETCD_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_KEY_FILE='/etc/dcs/cert/${KEY}'
-ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
-ETCD_CLIENT_CERT_AUTH='true'
+[$] Script for sending certificates to other nodes:
+```bash
 
-# TLS – PEER
-ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
-ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
-ETCD_PEER_CLIENT_CERT_AUTH='true'
+```
+
+```bash
+NODES='dcs-01:192.168.56.11 dcs-02:192.168.56.12'
+DOMAIN='patroni.mydomain'
+
+for i in ${NODES}; do
+
+# Node IP address
+IP="`echo ${i} | cut -f2 -d:`"
+
+# Node hostname
+HN="`echo ${i} | cut -f1 -d:`"
+
+# Make directory
+OUT_DIR="/tmp/cert/${i}"
+mkdir ${OUT_DIR}
+
+
+
+
+
+
+
+
+
+
+NODE_FQDN="${1}"
+NODE_IP="${2}"
+
+
+NODE_NAME="`echo ${NODE_FQDN} | cut -f1 -d.`"
+CERT_DIR='/etc/dcs/cert'
+OUT_DIR="/tmp/${NODE_NAME}-certs"
+
+mkdir -p "${OUT_DIR}"
+
+KEY="${OUT_DIR}/${NODE_NAME}.key"
+CSR="${OUT_DIR}/${NODE_NAME}.csr"
+CRT="${OUT_DIR}/${NODE_NAME}.crt"
+EXT="${OUT_DIR}/${NODE_NAME}.ext"
+
+echo "[+] Gerando chave privada"
+openssl genrsa -out "${KEY}" 4096
+
+echo "[+] Criando CSR"
+openssl req -new -key "${KEY}" -out "${CSR}" \
+  -subj "/CN=${NODE_NAME}"
+
+echo "[+] Criando arquivo de extensões"
+cat > "${EXT}" <<EOF
+[v3_req]
+subjectAltName = @alt_names
+extendedKeyUsage = serverAuth,clientAuth
+
+[alt_names]
+DNS.1 = ${NODE_NAME}
+DNS.2 = ${NODE_FQDN}
+IP.1  = ${NODE_IP}
+IP.2  = 127.0.0.1
 EOF
-```
 
-[$] Criar link em /etc/default/etcd:
-```bash
-sudo ln -sf /etc/dcs/etcd /etc/default/etcd
-```
+echo "[+] Assinando certificado com a CA"
+sudo openssl x509 -req \
+  -in "${CSR}" \
+  -CA "${CERT_DIR}/ca.crt" \
+  -CAkey "${CERT_DIR}/ca.key" \
+  -CAcreateserial \
+  -out "${CRT}" \
+  -days 365 \
+  -extensions v3_req \
+  -extfile "${EXT}"
 
-[$] Ativação da configuração TLS:
+echo "[+] Copiando ca.crt"
+cp "${CERT_DIR}/ca.crt" "${OUT_DIR}/"
+
+echo "[+] Criando tar para envio"
+tar -cf /tmp/${NODE_NAME}.tar \
+  ${OUT_DIR}/${NODE_NAME}.crt \
+  ${OUT_DIR}/${NODE_NAME}.key \
+  ${OUT_DIR}/ca.crt
+
+
+
+
+
+
+
+
+
+[$] Start etcd service again:
 ```bash
-sudo systemctl restart etcd
+sudo systemctl start etcd
 ```
 
 

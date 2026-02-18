@@ -116,6 +116,18 @@ export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
 awk '/inet / {print \$2}' | \\
 cut -d/ -f1\`"
 
+# DCS private key
+KEY="\${ETCD_HOSTNAME}.key" 
+
+# DCS CSR
+CSR="\${ETCD_HOSTNAME}.csr"
+
+# Certificado do DCS
+CRT="\${ETCD_HOSTNAME}.crt"
+
+# SAN file
+SAN="\${ETCD_HOSTNAME}.ext"
+
 EOF
 ```
 
@@ -152,22 +164,6 @@ Adding user tux to group etcd
 
 
 ### etcd configuration
-
-[$] Environment variables for keys and certificates, which will be used in
-the configuration and later to generate certificates and keys:
-```bash
-# DCS private key
-KEY="${ETCD_HOSTNAME}.key" 
-
-# DCS CSR
-CSR="${ETCD_HOSTNAME}.csr"
-
-# Certificado do DCS
-CRT="${ETCD_HOSTNAME}.crt"
-
-# SAN file
-SAN="${ETCD_HOSTNAME}.ext"
-```
 
 [$] Ajuste da variável ETCD_INITIAL_CLUSTER, que contém informações dos nós:
 ```bash
@@ -237,23 +233,6 @@ prevenindo acessos não autorizados e interceptação de dados.
 ```bash
 source ~/.etcdvars
 ```
-
-[$] Environment variables for keys and certificates, which will be used in
-the configuration and later to generate certificates and keys:
-```bash
-# DCS private key
-KEY="${ETCD_HOSTNAME}.key" 
-
-# DCS CSR
-CSR="${ETCD_HOSTNAME}.csr"
-
-# Certificado do DCS
-CRT="${ETCD_HOSTNAME}.crt"
-
-# SAN file
-SAN="${ETCD_HOSTNAME}.ext"
-```
-
 
 [$] Chaves e certificados necessários:
 ```bash
@@ -466,14 +445,125 @@ etcd-sign-node.sh 'dcs-01:192.168.56.11 dcs-02:192.168.56.12'
 sudo systemctl start etcd
 ```
 
+### Authentication
+
+Seguem passos para habilitar autenticação, obrigando aplicações clientes a
+fornecerem credenciais para acessar.
+
+[$] Create root role:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  role add root
+```
+```
+Role root created
+```
+
+> **Observação**  
+>
+> O `etcd` permite criar usuários e roles antes de ativar a autenticação.
+> Durante essa fase, *warnings* são esperados e podem ser ignorados.
+
+[$] Conceder permissões totais ao role root:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  role grant-permission root --prefix=true readwrite /
+```
+```
+Role root updated
+```
+
+[$] Criar o usuário root:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  user add root
+```
+```
+Password of root: 
+Type password of root again for confirmation: 
+User root created
+```
+
+[$] Associar o usuário root ao role root:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  user grant-role root root
+```
+```
+Role root is granted to user root
+```
+
+[$] Enable authentication:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  auth enable
+```
+```
+Authentication Enabled
+```
+
+[$] Verificando o status de autenticação (erro esperado):
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  auth status
+```
+```
+. . .
+Error: etcdserver: user name not found
+```
+
+Mensagem de erro **esperada** por não fornecer um usuário após a habilitação
+da autenticação, comando sem `--user`.
+
+[$] Verificando o status de autenticação:
+```bash
+etcdctl \
+  --endpoints=https://${ETCD_IP}:2379 \
+  --cacert=/etc/dcs/cert/ca.crt \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  --user root \
+  auth status
+```
+```
+Password: 
+Authentication Status: true
+AuthRevision: 5
+```
+
+
 
 [$] Teste de acesso TLS ao cluster:
 ```bash
 etcdctl \
   --endpoints=https://${ETCD_IP}:2379 \
   --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
   member list
 ```
 ```
@@ -504,115 +594,7 @@ LISTEN 0      4096               *:2380            *:*    users:(("etcd",pid=942
 LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid=942,fd=6))
 ```
 
-### Authentication
 
-Seguem passos para habilitar autenticação, obrigando aplicações clientes a
-fornecerem credenciais para acessar.
-
-[$] Create root role:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  role add root
-```
-```
-Role root created
-```
-
-> **Observação**  
->
-> O `etcd` permite criar usuários e roles antes de ativar a autenticação.
-> Durante essa fase, *warnings* são esperados e podem ser ignorados.
-
-[$] Conceder permissões totais ao role root:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  role grant-permission root --prefix=true readwrite /
-```
-```
-Role root updated
-```
-
-[$] Criar o usuário root:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  user add root
-```
-```
-Password of root: 
-Type password of root again for confirmation: 
-User root created
-```
-
-[$] Associar o usuário root ao role root:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  user grant-role root root
-```
-```
-Role root is granted to user root
-```
-
-[$] Enable authentication:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  auth enable
-```
-```
-Authentication Enabled
-```
-
-[$] Verificando o status de autenticação (erro esperado):
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  auth status
-```
-```
-. . .
-Error: etcdserver: user name not found
-```
-
-Mensagem de erro **esperada** por não fornecer um usuário após a habilitação
-da autenticação, comando sem `--user`.
-
-[$] Verificando o status de autenticação:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
-  --user root \
-  auth status
-```
-```
-Password: 
-Authentication Status: true
-AuthRevision: 5
-```
 
 ### Testing
 
@@ -632,10 +614,10 @@ export ETCDCTL_PASSWORD
 ```bash
 etcdctl \
   --endpoints=https://${ETCD_IP}:2379 \
-  --user root \
   --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  --user root \
   put foo bar
 ```
 
@@ -644,10 +626,10 @@ etcdctl \
 ```bash
 etcdctl \
   --endpoints=https://${ETCD_IP}:2379 \
-  --user root \
   --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
+  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
+  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  --user root \
   get --print-value-only foo
 ```
 ```
@@ -764,6 +746,22 @@ parâmetros referentes a usuário e certificados.
 Há variáveis de ambiente aceitas pelo ETCD que faz com que isso seja
 facilitado.
 
+[$] Environment variables for keys and certificates, which will be used in
+the configuration and later to generate certificates and keys:
+```bash
+# DCS private key
+KEY="${ETCD_HOSTNAME}.key" 
+
+# DCS CSR
+CSR="${ETCD_HOSTNAME}.csr"
+
+# Certificado do DCS
+CRT="${ETCD_HOSTNAME}.crt"
+
+# SAN file
+SAN="${ETCD_HOSTNAME}.ext"
+```
+
 [$] Adicionar variáveis ao arquivo previamente criado:
 ```bash
 cat << EOF >> ~/.etcdvars
@@ -852,194 +850,6 @@ Atualiza o Raft membership
 
 ⚠️ Essa saída não é informativa — ela é prescritiva.
 Ela diz exatamente como o próximo nó deve ser configurado.
-
-
-
-[$] Generate SSH key:
-```bash
-ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
-```
-```
-Generating public/private ed25519 key pair.
-Your identification has been saved in /home/tux/.ssh/id_ed25519
-Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
-The key fingerprint is:
-SHA256:NX4CVOpbdxedLgMq7lvYRZx20kfevRTcm+LNLMczHTA tux@dcs-00.patroni.mydomain
-The key's randomart image is:
-+--[ED25519 256]--+
-|        ...   .o.|
-|       . .. oEo.B|
-|        o oB oo**|
-|       . ++.+.++o|
-|       .S.+.+oBo+|
-|      . +o.+ +oX.|
-|       o.o    o o|
-|      . .        |
-|       o.        |
-+----[SHA256]-----+
-```
-
-[$] Send the generated key to the other nodes:
-```bash
-ssh-copy-id -o StrictHostKeyChecking=accept-new 192.168.56.11
-```
-```
-/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
-/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
-/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
-tux@192.168.56.11's password: 
-
-Number of key(s) added: 1
-
-Now try logging into the machine, with: "ssh -o 'StrictHostKeyChecking=accept-new' '192.168.56.11'"
-and check to make sure that only the key(s) you wanted were added.
-```
-```bash
-ssh-copy-id -o StrictHostKeyChecking=accept-new 192.168.56.12
-```
-```
-/usr/bin/ssh-copy-id: INFO: Source of key(s) to be installed: "/home/tux/.ssh/id_ed25519.pub"
-/usr/bin/ssh-copy-id: INFO: attempting to log in with the new key(s), to filter out any that are already installed
-/usr/bin/ssh-copy-id: INFO: 1 key(s) remain to be installed -- if you are prompted now it is to install the new keys
-tux@192.168.56.12's password: 
-
-Number of key(s) added: 1
-
-Now try logging into the machine, with: "ssh -o 'StrictHostKeyChecking=accept-new' '192.168.56.12'"
-and check to make sure that only the key(s) you wanted were added.
-```
-
-
-[$] Confirme se ${HOME}/bin e crie o diretório:
-```bash
-if (echo $PATH | grep --color=auto "${HOME}/bin"); then
-  mkdir ${HOME}/bin 2> /dev/null;
-else
-  echo -e 'Error!: \nPlease, include ${HOME}/bin in your ${HOME} variable'
-fi
-```
-[$] Criação do script de:
-```bash
-vim ${HOME}/bin/etcd-sign-node.sh && chmod +x ${HOME}/bin/etcd-sign-node.sh
-```
-```bash
-#!/bin/bash
-# etcd-sign-node.sh
-set -euo pipefail
-
-NODE_FQDN="${1}"
-NODE_IP="${2}"
-
-
-NODE_NAME="`echo ${NODE_FQDN} | cut -f1 -d.`"
-CERT_DIR='/etc/dcs/cert'
-OUT_DIR="/tmp/${NODE_NAME}-certs"
-
-mkdir -p "${OUT_DIR}"
-
-KEY="${OUT_DIR}/${NODE_NAME}.key"
-CSR="${OUT_DIR}/${NODE_NAME}.csr"
-CRT="${OUT_DIR}/${NODE_NAME}.crt"
-EXT="${OUT_DIR}/${NODE_NAME}.ext"
-
-echo "[+] Gerando chave privada"
-openssl genrsa -out "${KEY}" 4096
-
-echo "[+] Criando CSR"
-openssl req -new -key "${KEY}" -out "${CSR}" \
-  -subj "/CN=${NODE_NAME}"
-
-echo "[+] Criando arquivo de extensões"
-cat > "${EXT}" <<EOF
-[v3_req]
-subjectAltName = @alt_names
-extendedKeyUsage = serverAuth,clientAuth
-
-[alt_names]
-DNS.1 = ${NODE_NAME}
-DNS.2 = ${NODE_FQDN}
-IP.1  = ${NODE_IP}
-IP.2  = 127.0.0.1
-EOF
-
-echo "[+] Assinando certificado com a CA"
-sudo openssl x509 -req \
-  -in "${CSR}" \
-  -CA "${CERT_DIR}/ca.crt" \
-  -CAkey "${CERT_DIR}/ca.key" \
-  -CAcreateserial \
-  -out "${CRT}" \
-  -days 365 \
-  -extensions v3_req \
-  -extfile "${EXT}"
-
-echo "[+] Copiando ca.crt"
-cp "${CERT_DIR}/ca.crt" "${OUT_DIR}/"
-
-echo "[+] Criando tar para envio"
-tar -cf /tmp/${NODE_NAME}.tar \
-  ${OUT_DIR}/${NODE_NAME}.crt \
-  ${OUT_DIR}/${NODE_NAME}.key \
-  ${OUT_DIR}/ca.crt
-
-echo "[✔] Certificados prontos:"
-echo "    /tmp/${NODE_NAME}.tar"
-
-echo "[+] Eviando certificados para o nó..."
-scp -O /tmp/${NODE_NAME}.tar ${NODE_IP}:/tmp/
-
-echo "[+] Descompactando o tar"
-ssh ${NODE_IP} "tar xf /tmp/${NODE_NAME}.tar -C /"
-
-
-echo "[+] Criação de diretório de certificados"
-ssh ${NODE_IP} "sudo mkdir -pm 0770 /etc/dcs/cert && \
-  sudo chmod 0770 /etc/dcs"
-
-echo "[+] Mover certificados,ajustar propriedade e permissões"
-ssh ${NODE_IP} "sudo mv ${OUT_DIR}/* /etc/dcs/cert && \
-  sudo chown -R etcd:etcd /etc/dcs && \
-  sudo chmod 0640 /etc/dcs/cert/*"
-
-echo "[✔] Certificados enviados para a localização correta!"  
-
-```
-
-[$] Criação do script de:
-```bash
-etcd-sign-node.sh dcs-01.patroni.mydomain 192.168.56.11
-```
-```
-[+] Gerando chave privada
-[+] Criando CSR
-[+] Criando arquivo de extensões
-[+] Assinando certificado com a CA
-Certificate request self-signature ok
-subject=CN=dcs-01
-[+] Copiando ca.crt
-[+] Criando tar para envio
-tar: Removing leading `/' from member names
-tar: Removing leading `/' from hard link targets
-[✔] Certificados prontos:
-    /tmp/dcs-01.tar
-[+] Eviando certificados para o nó...
-dcs-01.tar                                                                                                                                                                       100%   10KB  13.4MB/s   00:00    
-[+] Descompactando o tar
-[+] Criação de diretório de certificados
-[+] Mover certificados,ajustar propriedade e permissões
-[✔] Certificados enviados para a localização correta!
-```
-
-
-
-
-
-
-
-
-
-
-
 
 
 

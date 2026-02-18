@@ -1,82 +1,100 @@
 #!/bin/bash
+set -e
+
 # etcd-sign-node.sh
-set -euo pipefail
 
-NODE_FQDN="${1}"
-NODE_IP="${2}"
-
-
-NODE_NAME="`echo ${NODE_FQDN} | cut -f1 -d.`"
 CERT_DIR='/etc/dcs/cert'
-OUT_DIR="/tmp/${NODE_NAME}-certs"
+NODES="${1}"
+DOMAIN='patroni.mydomain'
 
-mkdir -p "${OUT_DIR}"
+# Make directory
+OUT_DIR="/tmp/cert/"
+mkdir -p ${OUT_DIR}
 
-KEY="${OUT_DIR}/${NODE_NAME}.key"
-CSR="${OUT_DIR}/${NODE_NAME}.csr"
-CRT="${OUT_DIR}/${NODE_NAME}.crt"
-EXT="${OUT_DIR}/${NODE_NAME}.ext"
+for i in ${NODES}; do
+  # Node dir
+  NODE_DIR="${OUT_DIR}/${i}"
 
-echo "[+] Gerando chave privada"
-openssl genrsa -out "${KEY}" 4096
+  # Node IP address
+  IP="${i##*:}"
 
-echo "[+] Criando CSR"
-openssl req -new -key "${KEY}" -out "${CSR}" \
-  -subj "/CN=${NODE_NAME}"
+  # Node hostname
+  NAME="${i%%:*}"
 
-echo "[+] Criando arquivo de extensões"
-cat > "${EXT}" <<EOF
+  KEY="${NODE_DIR}/${NAME}.key"
+  CSR="${NODE_DIR}/${NAME}.csr"
+  CRT="${NODE_DIR}/${NAME}.crt"
+  EXT="${NODE_DIR}/${NAME}.ext"
+
+  echo "==> Processing ${NAME} (${IP})"
+
+  echo "  [+] Copy SSH key to node"
+  ssh-copy-id -o StrictHostKeyChecking=accept-new ${IP}
+
+  mkdir -p "${NODE_DIR}"
+
+  echo "  [+] Generating private key"
+  openssl genrsa -out "${KEY}" 4096
+
+  echo "  [+] Generating CSR"
+  openssl req -new \
+    -key "${KEY}" \
+    -out "${CSR}" \
+    -subj "/CN=${NAME}"
+
+  echo "  [+] Creating extension file"
+  cat > "${EXT}" <<EOF
 [v3_req]
 subjectAltName = @alt_names
 extendedKeyUsage = serverAuth,clientAuth
 
 [alt_names]
-DNS.1 = ${NODE_NAME}
-DNS.2 = ${NODE_FQDN}
-IP.1  = ${NODE_IP}
+DNS.1 = ${NAME}
+DNS.2 = ${NAME}.${DOMAIN}
+IP.1  = ${IP}
 IP.2  = 127.0.0.1
 EOF
 
-echo "[+] Assinando certificado com a CA"
-sudo openssl x509 -req \
-  -in "${CSR}" \
-  -CA "${CERT_DIR}/ca.crt" \
-  -CAkey "${CERT_DIR}/ca.key" \
-  -CAcreateserial \
-  -out "${CRT}" \
-  -days 365 \
-  -extensions v3_req \
-  -extfile "${EXT}"
+  echo "  [+] Signing certificate with the CA"
+  sudo openssl x509 -req \
+    -in "${CSR}" \
+    -CA "${CERT_DIR}/ca.crt" \
+    -CAkey "${CERT_DIR}/ca.key" \
+    -CAcreateserial \
+    -out "${CRT}" \
+    -days 365 \
+    -extensions v3_req \
+    -extfile "${EXT}"
 
-echo "[+] Copiando ca.crt"
-cp "${CERT_DIR}/ca.crt" "${OUT_DIR}/"
+  echo "  [+] Copying ca.crt"
+  sudo bash -c "cp ${CERT_DIR}/ca.crt ${NODE_DIR}/"
 
-echo "[+] Criando tar para envio"
-tar -cf /tmp/${NODE_NAME}.tar \
-  ${OUT_DIR}/${NODE_NAME}.crt \
-  ${OUT_DIR}/${NODE_NAME}.key \
-  ${OUT_DIR}/ca.crt
+  sudo chown -R `whoami`: ${NODE_DIR}
 
-echo "[✔] Certificados prontos:"
-echo "    /tmp/${NODE_NAME}.tar"
+  echo "  [+] Creating tar ${NAME}.tar"
+  tar -C ${NODE_DIR} -cvf /tmp/${NAME}.tar \
+    ${NAME}.crt \
+    ${NAME}.key \
+    ca.crt
 
-echo "[+] Eviando certificados para o nó..."
-scp -O /tmp/${NODE_NAME}.tar ${NODE_IP}:/tmp/
+  echo "  [+] Copying /tmp/${NAME}.tar to ${NAME}"
+  scp -O /tmp/${NAME}.tar ${IP}:/tmp/
 
-echo "[+] Descompactando o tar"
-ssh ${NODE_IP} "tar xf /tmp/${NODE_NAME}.tar -C /"
+  echo "  [+] Decompressing the tar file"
+  CMD="tar -xf /tmp/${NAME}.tar -C ${CERT_DIR}/"
+  ssh ${IP} "sudo bash -c '${CMD}'"
 
+  echo "  [+] Permissions"
+  CMD="chown -R etcd:etcd ${CERT_DIR} && \
+  chmod 0640 ${CERT_DIR}/ca.crt && \
+  chmod 0640 ${CERT_DIR}/${NAME}.crt && \
+  chmod 0640 ${CERT_DIR}/${NAME}.key
+  "
+  ssh ${IP} "sudo bash -c '${CMD}'"
 
-echo "[+] Criação de diretório de certificados"
-ssh ${NODE_IP} "sudo mkdir -pm 0770 /etc/dcs/cert && \
-  sudo chmod 0770 /etc/dcs"
+  echo "  [✔] ${NAME} done!"
+  echo
+done
 
-echo "[+] Mover certificados,ajustar propriedade e permissões"
-ssh ${NODE_IP} "sudo mv ${OUT_DIR}/* /etc/dcs/cert && \
-  sudo chown -R etcd:etcd /etc/dcs && \
-  sudo chmod 0640 /etc/dcs/cert/* && \
-  sudo chmod 0600 /etc/dcs/cert/${NODE_NAME}.key"
-
-ssh ${NODE_IP} "rm -fr tmp/${NODE_NAME}.tar"
-
-echo "[✔] Certificados enviados para a localização correta!"  
+echo "  [✔] All nodes done!"
+rm -fr ${OUT_DIR}

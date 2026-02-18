@@ -312,129 +312,153 @@ chmod 0640 /etc/dcs/cert/*.crt /etc/dcs/cert/${KEY} && \
 chown -R etcd:etcd /etc/dcs"
 ```
 
-[$] Creating a tar archive for sending:
+[$] Generate SSH key:
 ```bash
-#
-OUTDIR='/tmp/certs'
-
-#
-mkdir -p ${OUTDIR}/dcs-{1,2}
-
-# 
-ls -d ${OUTDIR}/*
+ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
 ```
 ```
-/tmp/certs/dcs-1
-/tmp/certs/dcs-2
+Generating public/private ed25519 key pair.
+Your identification has been saved in /home/tux/.ssh/id_ed25519
+Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
+The key fingerprint is:
+SHA256:NX4CVOpbdxedLgMq7lvYRZx20kfevRTcm+LNLMczHTA tux@dcs-00.patroni.mydomain
+The key's randomart image is:
++--[ED25519 256]--+
+|        ...   .o.|
+|       . .. oEo.B|
+|        o oB oo**|
+|       . ++.+.++o|
+|       .S.+.+oBo+|
+|      . +o.+ +oX.|
+|       o.o    o o|
+|      . .        |
+|       o.        |
++----[SHA256]-----+
 ```
 
 
-[$] Creating a tar archive for sending:
+
+
+[$] Confirme se ${HOME}/bin e crie o diretório:
 ```bash
-sudo bash -c "tar -cf /tmp/${NODE_NAME}.tar \
-  ${OUT_DIR}/${NODE_NAME}.crt \
-  ${OUT_DIR}/${NODE_NAME}.key \
-  ${OUT_DIR}/ca.crt"
+if (echo $PATH | grep --color=auto "${HOME}/bin"); then
+  mkdir ${HOME}/bin 2> /dev/null;
+else
+  echo -e 'Error!: \nPlease, include ${HOME}/bin in your ${HOME} variable'
+fi
 ```
-
-
-
-
-mkdir /tmp/cert
-
-sudo cp -v /etc/dcs/cert/ca.crt /tmp/cert/
-
-[$] Script for sending certificates to other nodes:
+[$] Criação do script de:
 ```bash
-
+vim ${HOME}/bin/etcd-sign-node.sh && chmod +x ${HOME}/bin/etcd-sign-node.sh
 ```
-
 ```bash
-NODES='dcs-01:192.168.56.11 dcs-02:192.168.56.12'
+#!/bin/bash
+set -e
+
+# etcd-sign-node.sh
+
+CERT_DIR='/etc/dcs/cert'
+NODES="${1}"
 DOMAIN='patroni.mydomain'
 
-for i in ${NODES}; do
-
-# Node IP address
-IP="`echo ${i} | cut -f2 -d:`"
-
-# Node hostname
-HN="`echo ${i} | cut -f1 -d:`"
-
 # Make directory
-OUT_DIR="/tmp/cert/${i}"
-mkdir ${OUT_DIR}
+OUT_DIR="/tmp/cert/"
+mkdir -p ${OUT_DIR}
 
+for i in ${NODES}; do
+  # Node dir
+  NODE_DIR="${OUT_DIR}/${i}"
 
+  # Node IP address
+  IP="${i##*:}"
 
+  # Node hostname
+  NAME="${i%%:*}"
 
+  KEY="${NODE_DIR}/${NAME}.key"
+  CSR="${NODE_DIR}/${NAME}.csr"
+  CRT="${NODE_DIR}/${NAME}.crt"
+  EXT="${NODE_DIR}/${NAME}.ext"
 
+  echo "==> Processing ${NAME} (${IP})"
 
+  echo "  [+] Copy SSH key to node"
+  ssh-copy-id -o StrictHostKeyChecking=accept-new ${IP}
 
+  mkdir -p "${NODE_DIR}"
 
+  echo "  [+] Generating private key"
+  openssl genrsa -out "${KEY}" 4096
 
+  echo "  [+] Generating CSR"
+  openssl req -new \
+    -key "${KEY}" \
+    -out "${CSR}" \
+    -subj "/CN=${NAME}"
 
-NODE_FQDN="${1}"
-NODE_IP="${2}"
-
-
-NODE_NAME="`echo ${NODE_FQDN} | cut -f1 -d.`"
-CERT_DIR='/etc/dcs/cert'
-OUT_DIR="/tmp/${NODE_NAME}-certs"
-
-mkdir -p "${OUT_DIR}"
-
-KEY="${OUT_DIR}/${NODE_NAME}.key"
-CSR="${OUT_DIR}/${NODE_NAME}.csr"
-CRT="${OUT_DIR}/${NODE_NAME}.crt"
-EXT="${OUT_DIR}/${NODE_NAME}.ext"
-
-echo "[+] Gerando chave privada"
-openssl genrsa -out "${KEY}" 4096
-
-echo "[+] Criando CSR"
-openssl req -new -key "${KEY}" -out "${CSR}" \
-  -subj "/CN=${NODE_NAME}"
-
-echo "[+] Criando arquivo de extensões"
-cat > "${EXT}" <<EOF
+  echo "  [+] Creating extension file"
+  cat > "${EXT}" <<EOF
 [v3_req]
 subjectAltName = @alt_names
 extendedKeyUsage = serverAuth,clientAuth
 
 [alt_names]
-DNS.1 = ${NODE_NAME}
-DNS.2 = ${NODE_FQDN}
-IP.1  = ${NODE_IP}
+DNS.1 = ${NAME}
+DNS.2 = ${NAME}.${DOMAIN}
+IP.1  = ${IP}
 IP.2  = 127.0.0.1
 EOF
 
-echo "[+] Assinando certificado com a CA"
-sudo openssl x509 -req \
-  -in "${CSR}" \
-  -CA "${CERT_DIR}/ca.crt" \
-  -CAkey "${CERT_DIR}/ca.key" \
-  -CAcreateserial \
-  -out "${CRT}" \
-  -days 365 \
-  -extensions v3_req \
-  -extfile "${EXT}"
+  echo "  [+] Signing certificate with the CA"
+  sudo openssl x509 -req \
+    -in "${CSR}" \
+    -CA "${CERT_DIR}/ca.crt" \
+    -CAkey "${CERT_DIR}/ca.key" \
+    -CAcreateserial \
+    -out "${CRT}" \
+    -days 365 \
+    -extensions v3_req \
+    -extfile "${EXT}"
 
-echo "[+] Copiando ca.crt"
-cp "${CERT_DIR}/ca.crt" "${OUT_DIR}/"
+  echo "  [+] Copying ca.crt"
+  sudo bash -c "cp ${CERT_DIR}/ca.crt ${NODE_DIR}/"
 
-echo "[+] Criando tar para envio"
-tar -cf /tmp/${NODE_NAME}.tar \
-  ${OUT_DIR}/${NODE_NAME}.crt \
-  ${OUT_DIR}/${NODE_NAME}.key \
-  ${OUT_DIR}/ca.crt
+  sudo chown -R `whoami`: ${NODE_DIR}
 
+  echo "  [+] Creating tar ${NAME}.tar"
+  tar -C ${NODE_DIR} -cvf /tmp/${NAME}.tar \
+    ${NAME}.crt \
+    ${NAME}.key \
+    ca.crt
 
+  echo "  [+] Copying /tmp/${NAME}.tar to ${NAME}"
+  scp -O /tmp/${NAME}.tar ${IP}:/tmp/
 
+  echo "  [+] Decompressing the tar file"
+  CMD="tar -xf /tmp/${NAME}.tar -C ${CERT_DIR}/"
+  ssh ${IP} "sudo bash -c '${CMD}'"
 
+  echo "  [+] Permissions"
+  CMD="chown -R etcd:etcd ${CERT_DIR} && \
+  chmod 0640 ${CERT_DIR}/ca.crt && \
+  chmod 0640 ${CERT_DIR}/${NAME}.crt && \
+  chmod 0640 ${CERT_DIR}/${NAME}.key
+  "
+  ssh ${IP} "sudo bash -c '${CMD}'"
 
+  echo "  [✔] ${NAME} done!"
+  echo
+done
 
+echo "  [✔] All nodes done!"
+rm -fr ${OUT_DIR}
 
+```
+
+[$] Start etcd service again:
+```bash
+etcd-sign-node.sh 'dcs-01:192.168.56.11 dcs-02:192.168.56.12'
+```
 
 
 [$] Start etcd service again:

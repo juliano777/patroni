@@ -477,14 +477,16 @@ fornecerem credenciais para acessar.
 
 [dcs-00]
 
+[$] Disable the user variable at this time.:
+```bash
+unset ETCDCTL_USER
+```
+Since the variable was previously defined, it will keep asking for a
+password.
+
 [$] Create root role:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=${ETCDCTL_CERT} \
-  --key=${ETCDCTL_KEY} \
-  role add root
+etcdctl role add root
 ```
 ```
 Role root created
@@ -497,12 +499,7 @@ Role root created
 
 [$] Conceder permissões totais ao role root:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  role grant-permission root --prefix=true readwrite /
+etcdctl role grant-permission root --prefix=true readwrite /
 ```
 ```
 Role root updated
@@ -510,12 +507,7 @@ Role root updated
 
 [$] Criar o usuário root:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  user add root
+etcdctl user add root
 ```
 ```
 Password of root: 
@@ -525,12 +517,7 @@ User root created
 
 [$] Associar o usuário root ao role root:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  user grant-role root root
+etcdctl user grant-role root root
 ```
 ```
 Role root is granted to user root
@@ -538,12 +525,7 @@ Role root is granted to user root
 
 [$] Enable authentication:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  auth enable
+etcdctl auth enable
 ```
 ```
 Authentication Enabled
@@ -551,12 +533,7 @@ Authentication Enabled
 
 [$] Verificando o status de autenticação (erro esperado):
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  auth status
+etcdctl auth status
 ```
 ```
 . . .
@@ -568,13 +545,7 @@ da autenticação, comando sem `--user`.
 
 [$] Verificando o status de autenticação:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  --user root \
-  auth status
+etcdctl --user root auth status
 ```
 ```
 Password: 
@@ -586,15 +557,12 @@ AuthRevision: 5
 
 [$] Teste de acesso TLS ao cluster:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  member list
+etcdctl member list
 ```
 ```
-8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
+8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://127.0.0.1:2379,http://192.168.56.10:2379, false
+1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http://127.0.0.1:2379,http://192.168.56.11:2379, false
+d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http://127.0.0.1:2379,http://192.168.56.12:2379, false
 ```
 
 A saída exibe os metadados do membro do cluster:
@@ -617,10 +585,9 @@ O resultado confirma que o etcd está rodando, é acessível via rede
 sudo ss -nltp | grep etcd
 ```
 ```
-LISTEN 0      4096               *:2380            *:*    users:(("etcd",pid=942,fd=3))
-LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid=942,fd=6))
+LISTEN 0      4096   192.168.56.10:2380      0.0.0.0:*    users:(("etcd",pid=1172,fd=3))
+LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid=1172,fd=6))
 ```
-
 
 
 ### Testing
@@ -639,25 +606,13 @@ export ETCDCTL_PASSWORD
 
 [$] Criando uma chave:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  --user root \
-  put foo bar
+etcdctl --user root put foo bar
 ```
 
 
 [$] Teste com autenticação:
 ```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
-  --user root \
-  get --print-value-only foo
+etcdctl --user root get --print-value-only foo
 ```
 ```
 bar
@@ -766,41 +721,9 @@ etcdctl \
 bar
 ```
 
-### Environment variables
-
-Até então os comandos digitados foram muito longos tendo que passar
-parâmetros referentes a usuário e certificados.  
-Há variáveis de ambiente aceitas pelo ETCD que faz com que isso seja
-facilitado.
-
-[$] Environment variables for keys and certificates, which will be used in
-the configuration and later to generate certificates and keys:
-```bash
-# DCS private key
-KEY="${ETCD_HOSTNAME}.key" 
-
-# DCS CSR
-CSR="${ETCD_HOSTNAME}.csr"
-
-# Certificado do DCS
-CRT="${ETCD_HOSTNAME}.crt"
-
-# SAN file
-SAN="${ETCD_HOSTNAME}.ext"
-```
-
-[$] Teste de variáveis de ambiente:
-```bash
-etcdctl get --print-value-only foo
-```
-```
-bar
-```
-
-
 <!-- export ETCDCTL_PASSWORD='123' -->
 
-
+<!--
 
 ### Replication
 
@@ -993,6 +916,7 @@ sed \
 -->
 
 <!-- --------------------------------------------------------------------- -->
+
 
 
 https://chatgpt.com/share/68c1e553-36f8-800d-be39-057593c3e7c3

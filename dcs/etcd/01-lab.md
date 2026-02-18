@@ -50,6 +50,8 @@ vagrant ssh etcd
 
 ### Installation and initial configuration (single node)
 
+[all]
+
 [$] Install etcd:
 ```bash
 # Update repositories
@@ -103,10 +105,10 @@ export ETCDCTL_API='3'
 export ETCD_LOG_LEVEL='error'
 
 # Hostname
-export ETCD_HOSTNAME=\`hostname -s\`
+export ETCD_HOSTNAME="\`hostname -s\`"
 
 # Fully Qualified Domain (Host) Name
-export ETCD_FQDN=\`hostname -f\`
+export ETCD_FQDN="\`hostname -f\`"
 
 # Network interface
 NETIF='${NETIF}'
@@ -116,17 +118,26 @@ export ETCD_IP="\`ip -4 addr show \${NETIF} | \\
 awk '/inet / {print \$2}' | \\
 cut -d/ -f1\`"
 
-# DCS private key
-KEY="\${ETCD_HOSTNAME}.key" 
-
 # DCS CSR
-CSR="\${ETCD_HOSTNAME}.csr"
-
-# Certificado do DCS
-CRT="\${ETCD_HOSTNAME}.crt"
+DCS_CSR="/etc/dcs/cert/\${ETCD_HOSTNAME}.csr"
 
 # SAN file
-SAN="\${ETCD_HOSTNAME}.ext"
+DCS_SAN="/etc/dcs/cert/\${ETCD_HOSTNAME}.ext"
+
+# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
+
+# The CA certificate file used to verify the server
+export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
+
+# The client certificate file for TLS authentication
+export ETCDCTL_CERT="/etc/dcs/cert/\${ETCD_HOSTNAME}.crt"
+
+# The client private key file for TLS authentication
+export ETCDCTL_KEY="/etc/dcs/cert/\${ETCD_HOSTNAME}.key"
+
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'
 
 EOF
 ```
@@ -160,6 +171,46 @@ sudo gpasswd -a `whoami` etcd
 ```
 ```
 Adding user tux to group etcd
+```
+
+> **Attention!**
+>
+> The user was added to the group, but the change will only take effect when
+> the user logs again.
+
+[$] Disconnect and reconnect to the server to apply the group change:
+```bash
+logout
+```
+
+> **Note**
+>
+> Instead of typing the `logout` command, you can simply use the key
+> combination <Ctrl>+<D>.
+
+
+[$] Checking if the etcd group is listed as a user's group.:
+```bash
+groups | tr ' ' '\n' | grep etcd
+```
+```
+etcd
+```
+
+It worked.
+
+[$] Generate SSH key:
+```bash
+ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
+```
+```
+Generating public/private ed25519 key pair.
+Your identification has been saved in /home/tux/.ssh/id_ed25519
+Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
+The key fingerprint is:
+SHA256:NX4CVOpbdxedLgMq7lvYRZx20kfevRTcm+LNLMczHTA tux@dcs-00.patroni.mydomain
+The key's randomart image is:
+. . .
 ```
 
 
@@ -200,14 +251,14 @@ ETCD_INITIAL_CLUSTER_STATE='new'
 ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
 
 # TLS – CLIENT
-ETCD_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_CERT_FILE='${ETCDCTL_CERT}'
+ETCD_KEY_FILE='${ETCDCTL_KEY}'
 ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
 ETCD_CLIENT_CERT_AUTH='true'
 
 # TLS – PEER
-ETCD_PEER_CERT_FILE='/etc/dcs/cert/${CRT}'
-ETCD_PEER_KEY_FILE='/etc/dcs/cert/${KEY}'
+ETCD_PEER_CERT_FILE='${ETCDCTL_CERT}'
+ETCD_PEER_KEY_FILE='${ETCDCTL_KEY}'
 ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
 ETCD_PEER_CLIENT_CERT_AUTH='true'
 EOF"
@@ -220,6 +271,8 @@ sudo ln -sf /etc/dcs/etcd /etc/default/etcd
 
 ### TLS
 
+[dcs-00]
+
 Para garantir a segurança do *cluster*, configuraremos o TLS
 (*Transport Layer Security*).  
 O etcd suporta criptografia tanto para a comunicação cliente-servidor quanto
@@ -229,10 +282,6 @@ certificados. Isso garante que apenas os nós e clientes que possuam um
 certificado assinado por essa CA possam se comunicar com o *cluster*,
 prevenindo acessos não autorizados e interceptação de dados.
 
-[$] Read etcd environment variables file:
-```bash
-source ~/.etcdvars
-```
 
 [$] Chaves e certificados necessários:
 ```bash
@@ -247,16 +296,16 @@ sudo openssl req -x509 -new -nodes \
   -out /etc/dcs/cert/ca.crt
 
 # Geração da chave privada do DCS
-sudo openssl genrsa -out /etc/dcs/cert/${KEY} 4096
+sudo openssl genrsa -out ${ETCDCTL_KEY} 4096
 
 # Geração da CSR do DCS
 sudo openssl req -new \
-  -key /etc/dcs/cert/${KEY} \
+  -key ${ETCDCTL_KEY} \
   -subj "/CN=${ETCD_HOSTNAME}" \
-  -out /etc/dcs/cert/${CSR}
+  -out ${DCS_CSR}
 
 # Criar um arquivo de extensão SAN
-sudo bash -c "cat << EOF > /etc/dcs/cert/${SAN}
+sudo bash -c "cat << EOF > ${DCS_SAN}
 subjectAltName = @alt_names
 
 [alt_names]
@@ -270,53 +319,25 @@ EOF"
 
 # Assinatura do certificado do DCS pela CA
 sudo openssl x509 -req \
-  -in /etc/dcs/cert/${CSR} \
+  -in ${DCS_CSR} \
   -CA /etc/dcs/cert/ca.crt \
   -CAkey /etc/dcs/cert/ca.key \
   -CAcreateserial \
-  -out /etc/dcs/cert/${CRT} \
+  -extfile ${DCS_SAN} \
   -days 3650 \
-  -extfile /etc/dcs/cert/${SAN}
+  -out ${ETCDCTL_CERT}
 ```  
 ```
 Certificate request self-signature ok
 subject=CN=dcs-00
 ```
 
-
 [$] Ajustes de permissões e propriedade:
 ```bash
 sudo bash -c "chmod 0600 /etc/dcs/cert/ca.key && \
-chmod 0640 /etc/dcs/cert/*.crt /etc/dcs/cert/${KEY} && \
+chmod 0640 /etc/dcs/cert/*.crt ${ETCDCTL_KEY} && \
 chown -R etcd:etcd /etc/dcs"
 ```
-
-[$] Generate SSH key:
-```bash
-ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
-```
-```
-Generating public/private ed25519 key pair.
-Your identification has been saved in /home/tux/.ssh/id_ed25519
-Your public key has been saved in /home/tux/.ssh/id_ed25519.pub
-The key fingerprint is:
-SHA256:NX4CVOpbdxedLgMq7lvYRZx20kfevRTcm+LNLMczHTA tux@dcs-00.patroni.mydomain
-The key's randomart image is:
-+--[ED25519 256]--+
-|        ...   .o.|
-|       . .. oEo.B|
-|        o oB oo**|
-|       . ++.+.++o|
-|       .S.+.+oBo+|
-|      . +o.+ +oX.|
-|       o.o    o o|
-|      . .        |
-|       o.        |
-+----[SHA256]-----+
-```
-
-
-
 
 [$] Confirme se ${HOME}/bin e crie o diretório:
 ```bash
@@ -326,6 +347,7 @@ else
   echo -e 'Error!: \nPlease, include ${HOME}/bin in your ${HOME} variable'
 fi
 ```
+
 [$] Criação do script de:
 ```bash
 vim ${HOME}/bin/etcd-sign-node.sh && chmod +x ${HOME}/bin/etcd-sign-node.sh
@@ -364,19 +386,19 @@ for i in ${NODES}; do
   echo "  [+] Copy SSH key to node"
   ssh-copy-id -o StrictHostKeyChecking=accept-new ${IP}
 
-  mkdir -p "${NODE_DIR}"
+  mkdir -p ${NODE_DIR}
 
   echo "  [+] Generating private key"
-  openssl genrsa -out "${KEY}" 4096
+  openssl genrsa -out ${KEY} 4096
 
   echo "  [+] Generating CSR"
   openssl req -new \
-    -key "${KEY}" \
-    -out "${CSR}" \
+    -key ${KEY} \
+    -out ${CSR} \
     -subj "/CN=${NAME}"
 
   echo "  [+] Creating extension file"
-  cat > "${EXT}" <<EOF
+  cat > ${EXT} <<EOF
 [v3_req]
 subjectAltName = @alt_names
 extendedKeyUsage = serverAuth,clientAuth
@@ -390,14 +412,14 @@ EOF
 
   echo "  [+] Signing certificate with the CA"
   sudo openssl x509 -req \
-    -in "${CSR}" \
-    -CA "${CERT_DIR}/ca.crt" \
-    -CAkey "${CERT_DIR}/ca.key" \
+    -in ${CSR} \
+    -CA ${CERT_DIR}/ca.crt \
+    -CAkey ${CERT_DIR}/ca.key \
     -CAcreateserial \
-    -out "${CRT}" \
+    -out ${CRT} \
     -days 365 \
     -extensions v3_req \
-    -extfile "${EXT}"
+    -extfile ${EXT}
 
   echo "  [+] Copying ca.crt"
   sudo bash -c "cp ${CERT_DIR}/ca.crt ${NODE_DIR}/"
@@ -418,10 +440,12 @@ EOF
   ssh ${IP} "sudo bash -c '${CMD}'"
 
   echo "  [+] Permissions"
-  CMD="chown -R etcd:etcd ${CERT_DIR} && \
+  CMD="\
   chmod 0640 ${CERT_DIR}/ca.crt && \
   chmod 0640 ${CERT_DIR}/${NAME}.crt && \
-  chmod 0640 ${CERT_DIR}/${NAME}.key
+  chmod 0640 ${CERT_DIR}/${NAME}.key && \
+  chmod 0750 /etc/dcs/cert /etc/dcs && \
+  chown -R etcd:etcd /etc/dcs 
   "
   ssh ${IP} "sudo bash -c '${CMD}'"
 
@@ -439,6 +463,7 @@ rm -fr ${OUT_DIR}
 etcd-sign-node.sh 'dcs-01:192.168.56.11 dcs-02:192.168.56.12'
 ```
 
+[all]
 
 [$] Start etcd service again:
 ```bash
@@ -450,13 +475,15 @@ sudo systemctl start etcd
 Seguem passos para habilitar autenticação, obrigando aplicações clientes a
 fornecerem credenciais para acessar.
 
+[dcs-00]
+
 [$] Create root role:
 ```bash
 etcdctl \
   --endpoints=https://${ETCD_IP}:2379 \
   --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${ETCD_HOSTNAME}.crt \
-  --key=/etc/dcs/cert/${ETCD_HOSTNAME}.key \
+  --cert=${ETCDCTL_CERT} \
+  --key=${ETCDCTL_KEY} \
   role add root
 ```
 ```
@@ -654,7 +681,7 @@ etcdctl \
   --user root \
   --cacert=/etc/dcs/cert/ca.crt \
   --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
+  --key=/etc/dcs/cert/${DCS_KEY} \
   snapshot save /var/lib/dcs/backup/etcd-snapshot.db
 ```
 ```
@@ -732,7 +759,7 @@ etcdctl \
   --user root \
   --cacert=/etc/dcs/cert/ca.crt \
   --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${KEY} \
+  --key=/etc/dcs/cert/${DCS_KEY} \
   get --print-value-only foo
 ```
 ```
@@ -760,32 +787,6 @@ CRT="${ETCD_HOSTNAME}.crt"
 
 # SAN file
 SAN="${ETCD_HOSTNAME}.ext"
-```
-
-[$] Adicionar variáveis ao arquivo previamente criado:
-```bash
-cat << EOF >> ~/.etcdvars
-# The comma-separated list of etcd endpoints
-export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
-
-# The CA certificate file used to verify the server
-export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
-
-# The client certificate file for TLS authentication
-export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
-
-# The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
-
-# The username for etcd authentication (Role-Based Access Control)
-export ETCDCTL_USER='root'
-
-EOF
-```
-
-[$] Aplicar as variáveis:
-```bash
-source ~/.etcdvars
 ```
 
 [$] Teste de variáveis de ambiente:
@@ -871,7 +872,7 @@ export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
 export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
 
 # The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
+export ETCDCTL_KEY='/etc/dcs/cert/${DCS_KEY}'
 
 # The username for etcd authentication (Role-Based Access Control)
 export ETCDCTL_USER='root'# The comma-separated list of etcd endpoints
@@ -884,7 +885,7 @@ export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
 export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
 
 # The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${KEY}'
+export ETCDCTL_KEY='/etc/dcs/cert/${DCS_KEY}'
 
 # The username for etcd authentication (Role-Based Access Control)
 export ETCDCTL_USER='root'

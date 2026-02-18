@@ -31,19 +31,19 @@ for i in ${NODES}; do
   echo "  [+] Copy SSH key to node"
   ssh-copy-id -o StrictHostKeyChecking=accept-new ${IP}
 
-  mkdir -p "${NODE_DIR}"
+  mkdir -p ${NODE_DIR}
 
   echo "  [+] Generating private key"
-  openssl genrsa -out "${KEY}" 4096
+  openssl genrsa -out ${KEY} 4096
 
   echo "  [+] Generating CSR"
   openssl req -new \
-    -key "${KEY}" \
-    -out "${CSR}" \
+    -key ${KEY} \
+    -out ${CSR} \
     -subj "/CN=${NAME}"
 
   echo "  [+] Creating extension file"
-  cat > "${EXT}" <<EOF
+  cat > ${EXT} <<EOF
 [v3_req]
 subjectAltName = @alt_names
 extendedKeyUsage = serverAuth,clientAuth
@@ -57,14 +57,14 @@ EOF
 
   echo "  [+] Signing certificate with the CA"
   sudo openssl x509 -req \
-    -in "${CSR}" \
-    -CA "${CERT_DIR}/ca.crt" \
-    -CAkey "${CERT_DIR}/ca.key" \
+    -in ${CSR} \
+    -CA ${CERT_DIR}/ca.crt \
+    -CAkey ${CERT_DIR}/ca.key \
     -CAcreateserial \
-    -out "${CRT}" \
+    -out ${CRT} \
     -days 365 \
     -extensions v3_req \
-    -extfile "${EXT}"
+    -extfile ${EXT}
 
   echo "  [+] Copying ca.crt"
   sudo bash -c "cp ${CERT_DIR}/ca.crt ${NODE_DIR}/"
@@ -85,10 +85,12 @@ EOF
   ssh ${IP} "sudo bash -c '${CMD}'"
 
   echo "  [+] Permissions"
-  CMD="chown -R etcd:etcd ${CERT_DIR} && \
+  CMD="\
   chmod 0640 ${CERT_DIR}/ca.crt && \
   chmod 0640 ${CERT_DIR}/${NAME}.crt && \
-  chmod 0640 ${CERT_DIR}/${NAME}.key
+  chmod 0640 ${CERT_DIR}/${NAME}.key && \
+  chmod 0750 /etc/dcs/cert /etc/dcs && \
+  chown -R etcd:etcd /etc/dcs 
   "
   ssh ${IP} "sudo bash -c '${CMD}'"
 

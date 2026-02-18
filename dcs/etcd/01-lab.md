@@ -95,7 +95,7 @@ EOF'
 read -p 'Specificy the network interface: ' NETIF
 
 # Environment variables file
-cat << EOF > ~/.etcdvars
+ cat << EOF > ~/.etcdvars
 # API version (Patroni required version)
 export ETCDCTL_API='3'
 
@@ -121,7 +121,7 @@ EOF
 
 [$] A cada login, ler e aplicar as variáveis de ambiente:
 ```bash
-cat << EOF >> ~/.bashrc
+ cat << EOF >> ~/.bashrc
 
 # Read etcd environment variables file
 source ~/.etcdvars
@@ -233,6 +233,27 @@ certificados. Isso garante que apenas os nós e clientes que possuam um
 certificado assinado por essa CA possam se comunicar com o *cluster*,
 prevenindo acessos não autorizados e interceptação de dados.
 
+[$] Read etcd environment variables file:
+```bash
+source ~/.etcdvars
+```
+
+[$] Environment variables for keys and certificates, which will be used in
+the configuration and later to generate certificates and keys:
+```bash
+# DCS private key
+KEY="${ETCD_HOSTNAME}.key" 
+
+# DCS CSR
+CSR="${ETCD_HOSTNAME}.csr"
+
+# Certificado do DCS
+CRT="${ETCD_HOSTNAME}.crt"
+
+# SAN file
+SAN="${ETCD_HOSTNAME}.ext"
+```
+
 
 [$] Chaves e certificados necessários:
 ```bash
@@ -291,15 +312,32 @@ chmod 0640 /etc/dcs/cert/*.crt /etc/dcs/cert/${KEY} && \
 chown -R etcd:etcd /etc/dcs"
 ```
 
-<!--
 [$] Creating a tar archive for sending:
 ```bash
-tar -cf /tmp/${NODE_NAME}.tar \
+#
+OUTDIR='/tmp/certs'
+
+#
+mkdir -p ${OUTDIR}/dcs-{1,2}
+
+# 
+ls -d ${OUTDIR}/*
+```
+```
+/tmp/certs/dcs-1
+/tmp/certs/dcs-2
+```
+
+
+[$] Creating a tar archive for sending:
+```bash
+sudo bash -c "tar -cf /tmp/${NODE_NAME}.tar \
   ${OUT_DIR}/${NODE_NAME}.crt \
   ${OUT_DIR}/${NODE_NAME}.key \
-  ${OUT_DIR}/ca.crt
+  ${OUT_DIR}/ca.crt"
 ```
--->
+
+
 
 
 mkdir /tmp/cert

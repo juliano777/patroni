@@ -652,15 +652,16 @@ The following are commands for monitoring an etcd cluster.
 
 [$][any] Listing the cluster members:
 ```bash
-etcdctl member list
+etcdctl member list --write-out=table
 ```
 ```
-8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, ht│8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://│8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://127.0.0
-tp://127.0.0.1:2379,http://192.168.56.10:2379, false            │127.0.0.1:2379,http://192.168.56.10:2379, false                      │.1:2379,http://192.168.56.10:2379, false
-1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, h│1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http:/│1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http://127.0.
-ttp://127.0.0.1:2379,http://192.168.56.11:2379, false           │/127.0.0.1:2379,http://192.168.56.11:2379, false                     │0.1:2379,http://192.168.56.11:2379, false
-d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, h│d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http:/│d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http://127.0.
-ttp://127.0.0.1:2379,http://192.168.56.12:2379, false
++------------------+---------+--------+----------------------------+-------------------------------------------------+------------+
+|        ID        | STATUS  |  NAME  |         PEER ADDRS         |                  CLIENT ADDRS                   | IS LEARNER |
++------------------+---------+--------+----------------------------+-------------------------------------------------+------------+
+|  8cc5336ad7ebe6b | started | dcs-00 | https://192.168.56.10:2380 | http://127.0.0.1:2379,http://192.168.56.10:2379 |      false |
+| 1761bef04e125165 | started | dcs-01 | https://192.168.56.11:2380 | http://127.0.0.1:2379,http://192.168.56.11:2379 |      false |
+| d60f170a453bcaf4 | started | dcs-02 | https://192.168.56.12:2380 | http://127.0.0.1:2379,http://192.168.56.12:2379 |      false |
++------------------+---------+--------+----------------------------+-------------------------------------------------+------------+
 ```
 
 The output displays the cluster member metadata:
@@ -728,9 +729,9 @@ cluster:
 etcdctl check perf
 ```
 ```
- 59 / 60 Boooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom   !  98.33%PASS: Throughput is 146 writes/s
-PASS: Slowest request took 0.116554s
-PASS: Stddev is 0.004930s
+ 59 / 60 Boooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom   !  98.33%PASS: Throughput is 148 writes/s
+PASS: Slowest request took 0.088214s
+PASS: Stddev is 0.005440s
 PASS
 ```
 
@@ -769,6 +770,77 @@ bar
 ```
 
 ### Backup
+
+```bash
+sudo mkdir -pm 0770 /var/backups/etcd
+sudo chown etcd:etcd /var/backups/etcd
+```
+
+```bash
+unset ETCDCTL_ENDPOINTS
+```
+
+```bash
+etcdctl snapshot save /var/backups/etcd/etcd-snapshot.db \
+  --endpoints=https://192.168.56.11:2379
+```
+```
+{"level":"info","ts":"2026-02-19T17:34:39.400688-0300","caller":"snapshot/v3_snapshot.go:65","msg":"created temporary db file","path":"/var/backups/etcd/etcd-snapshot.db.part"}
+{"level":"info","ts":"2026-02-19T17:34:39.471602-0300","logger":"client","caller":"v3/maintenance.go:212","msg":"opened snapshot stream; downloading"}
+{"level":"info","ts":"2026-02-19T17:34:39.471752-0300","caller":"snapshot/v3_snapshot.go:73","msg":"fetching snapshot","endpoint":"https://192.168.56.11:2379"}
+{"level":"info","ts":"2026-02-19T17:34:39.638165-0300","logger":"client","caller":"v3/maintenance.go:220","msg":"completed snapshot read; closing"}
+{"level":"info","ts":"2026-02-19T17:34:39.786539-0300","caller":"snapshot/v3_snapshot.go:88","msg":"fetched snapshot","endpoint":"https://192.168.56.11:2379","size":"22 MB","took":"now"}
+{"level":"info","ts":"2026-02-19T17:34:39.786693-0300","caller":"snapshot/v3_snapshot.go:97","msg":"saved","path":"/var/backups/etcd/etcd-snapshot.db"}
+Snapshot saved at /var/backups/etcd/etcd-snapshot.db
+```
+
+```bash
+etcdutl snapshot status /var/backups/etcd/etcd-snapshot.db --write-out=table
+```
+```
++----------+----------+------------+------------+
+|   HASH   | REVISION | TOTAL KEYS | TOTAL SIZE |
++----------+----------+------------+------------+
+| 9fd7e1ac |     8868 |      17742 |      22 MB |
++----------+----------+------------+------------+
+```
+
+```bash
+sudo systemctl stop etcd
+```
+
+```bash
+sudo rm -rf /var/lib/etcd
+```
+
+```bash
+ETCD_INITIAL_CLUSTER="\
+dcs-00=https://192.168.56.10:2380,\
+dcs-01=https://192.168.56.11:2380,\
+dcs-02=https://192.168.56.12:2380\
+"
+sudo etcdutl snapshot restore /var/backups/etcd/etcd-snapshot.db \
+  --name ${ETCD_HOSTNAME} \
+  --initial-cluster ${ETCD_INITIAL_CLUSTER} \
+  --initial-cluster-token etcd-cluster-0 \
+  --initial-advertise-peer-urls https://${ETCD_IP}:2380 \
+  --data-dir /var/lib/etcd
+```  
+```
+2026-02-19T17:48:04-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/backups/etcd/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+2026-02-19T17:48:04-03:00	info	membership/store.go:141	Trimming membership information from the backend...
+2026-02-19T17:48:05-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "74faf0955775c4ee", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
+2026-02-19T17:48:05-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "74faf0955775c4ee", "local-member-id": "0", "added-peer-id": "1761bef04e125165", "added-peer-peer-urls": ["https://192.168.56.11:2380"]}
+2026-02-19T17:48:05-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "74faf0955775c4ee", "local-member-id": "0", "added-peer-id": "d60f170a453bcaf4", "added-peer-peer-urls": ["https://192.168.56.12:2380"]}
+2026-02-19T17:48:05-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/backups/etcd/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
+```
+
+```bash
+sudo chown -R etcd: /var/lib/etcd
+```
+
+
+
 
 
 

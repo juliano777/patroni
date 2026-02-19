@@ -762,3 +762,10 @@ bar
 
 ### Backup
 
+
+
+<!-- 
+https://chatgpt.com/share/68c1e553-36f8-800d-be39-057593c3e7c3
+
+https://www.enterprisedb.com/docs/supported-open-source/patroni/
+-->

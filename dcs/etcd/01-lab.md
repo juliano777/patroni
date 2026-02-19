@@ -483,7 +483,7 @@ rm -fr ${OUT_DIR}
 
 ```
 
-[$][dcs-00] Start etcd service again:
+[$][dcs-00] Signing the other nodes:
 ```bash
 etcd-sign-node.sh 'dcs-01:192.168.56.11 dcs-02:192.168.56.12'
 ```

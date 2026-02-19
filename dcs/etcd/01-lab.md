@@ -9,50 +9,11 @@ O objetivo final desta seção é criar um _cluster_ de nós.
 | `dcs-02`      | `192.168.56.12` |
 
 
-
-<!-- 
-[$] Create a Vagrantfile:
-```bash
-vim Vagrantfile
-```
-```ruby
-Vagrant.configure("2") do |config|
-  config.vm.define "etcd" do |etcd|
-    etcd.vm.box = "debian/bookworm64"
-
-    # Hostname
-    etcd.vm.hostname = "dcs-00.patroni.mydomain"
-
-    # Private IP
-    etcd.vm.network "private_network", ip: "192.168.56.10"
-
-    # Resources settings
-    etcd.vm.provider "virtualbox" do |vb|
-      vb.name = "dcs-00"
-      vb.memory = 1024
-      vb.cpus = 2
-    end
-  end
-end
-```
-
-[$] Create the VM:
-```bash
-vagrant up
-```
-
-[$] Access the VM via SSH:
-```bash
-vagrant ssh etcd
-```
-
--->
-
 ### Installation and initial configuration (single node)
 
-[all]
+[all nodes]
 
-[$] Install etcd:
+[$][all nodes] Install etcd:
 ```bash
 # Update repositories
 sudo apt update
@@ -61,12 +22,12 @@ sudo apt update
 sudo apt install -y etcd-{client,server} && sudo apt clean
 ```
 
-[$] Stop etcd service:
+[$][all nodes] Stop etcd service:
 ```bash
 sudo systemctl stop etcd
 ```
 
-[$] Configure /etc/hosts:
+[$][all nodes] Configure /etc/hosts:
 ```bash
  sudo bash -c 'cat << EOF > /etc/hosts
 127.0.0.1	localhost
@@ -91,7 +52,7 @@ EOF'
 ```
 
 
-[$] Arquivo específico para variáveis de ambiente úteis para o etcd:
+[$][all nodes] A specific file for environment variables useful for etcd:
 ```bash
 # Network interface variable
 read -p 'Specificy the network interface: ' NETIF
@@ -142,7 +103,7 @@ export ETCDCTL_USER='root'
 EOF
 ```
 
-[$] A cada login, ler e aplicar as variáveis de ambiente:
+[$][all nodes] At each login, read and apply the environment variables:
 ```bash
  cat << EOF >> ~/.bashrc
 
@@ -151,12 +112,12 @@ source ~/.etcdvars
 EOF
 ```
 
-[$] Read etcd environment variables file:
+[$][all nodes] Read etcd environment variables file:
 ```bash
 source ~/.etcdvars
 ```
 
-[$] Bash completion:
+[$][all nodes] Bash completion:
 ```bash
 # Install bash-completion package
 sudo apt install -y bash-completion && sudo apt clean
@@ -165,7 +126,7 @@ sudo apt install -y bash-completion && sudo apt clean
 sudo bash -c 'etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh'
 ```
 
-[$] Adicionar usuário atual ao grupo etcd:
+[$][all nodes] Add current user to the etcd group:
 ```bash
 sudo gpasswd -a `whoami` etcd
 ```
@@ -178,7 +139,8 @@ Adding user tux to group etcd
 > The user was added to the group, but the change will only take effect when
 > the user logs again.
 
-[$] Disconnect and reconnect to the server to apply the group change:
+[$][all nodes] Disconnect and reconnect to the server to apply the group
+change:
 ```bash
 logout
 ```
@@ -189,7 +151,7 @@ logout
 > combination <Ctrl>+<D>.
 
 
-[$] Checking if the etcd group is listed as a user's group.:
+[$][all nodes] Checking if the etcd group is listed as a user's group:
 ```bash
 groups | tr ' ' '\n' | grep etcd
 ```
@@ -199,7 +161,7 @@ etcd
 
 It worked.
 
-[$] Generate SSH key:
+[$][all nodes] Generate SSH key:
 ```bash
 ssh-keygen -P '' -t ed25519 -f ~/.ssh/id_ed25519
 ```
@@ -216,7 +178,8 @@ The key's randomart image is:
 
 ### etcd configuration
 
-[$] Ajuste da variável ETCD_INITIAL_CLUSTER, que contém informações dos nós:
+[$][all nodes] Adjusting the ETCD_INITIAL_CLUSTER variable, which contains
+node information:
 ```bash
 ETCD_INITIAL_CLUSTER="\
 dcs-00=https://192.168.56.10:2380,\
@@ -225,13 +188,13 @@ dcs-02=https://192.168.56.12:2380\
 "
 ```
 
-[$] Criar diretório de configuração e certificados:
+[$][all nodes] Create configuration and certificate directory:
 ```bash
-# Criar diretórios e ajustar permissões
+# Create directories and adjust permissions
 sudo mkdir -pm 0770 /etc/dcs/cert && sudo chmod 0770 /etc/dcs
 ```
 
-[$] Arquivo de configuração
+[$][all nodes] Configuration file:
 ```bash
  sudo bash -c "cat << EOF > /etc/dcs/etcd
 ETCD_NAME='${ETCD_HOSTNAME}'
@@ -264,47 +227,45 @@ ETCD_PEER_CLIENT_CERT_AUTH='true'
 EOF"
 ```
 
-[$] Criar link em /etc/default/etcd:
+[$][all nodes] Create a link in /etc/default/etcd:
 ```bash
 sudo ln -sf /etc/dcs/etcd /etc/default/etcd
 ```
 
 ### TLS
 
-[dcs-00]
-
-Para garantir a segurança do *cluster*, configuraremos o TLS
+To ensure the security of the cluster, we will configure TLS
 (*Transport Layer Security*).  
-O etcd suporta criptografia tanto para a comunicação cliente-servidor quanto
-para *peer-to-peer* (nós do *cluster* conversando entre si).  
-Criaremos uma autoridade certificadora (CA) própria para assinar os
-certificados. Isso garante que apenas os nós e clientes que possuam um
-certificado assinado por essa CA possam se comunicar com o *cluster*,
-prevenindo acessos não autorizados e interceptação de dados.
+etcd supports encryption for both client-server and peer-to-peer
+communication (nodes in the cluster communicating with each other).  
+We will create our own Certificate Authority (CA) to sign the certificates.  
+This ensures that only nodes and clients that possess a certificate signed by
+this CA can communicate with the cluster, preventing unauthorized access and
+data interception.
 
 
-[$] Chaves e certificados necessários:
+[$][dcs-00] Keys and certificates required:
 ```bash
-# Gerar chave privada da CA
+# Generate CA private key
 sudo openssl genrsa -out /etc/dcs/cert/ca.key 4096
 
-# Gerar certificado da CA
+# Generate CA certificate
 sudo openssl req -x509 -new -nodes \
   -key /etc/dcs/cert/ca.key \
   -subj '/CN=dcs-ca' \
   -days 3650 \
   -out /etc/dcs/cert/ca.crt
 
-# Geração da chave privada do DCS
+# DCS private key generation
 sudo openssl genrsa -out ${ETCDCTL_KEY} 4096
 
-# Geração da CSR do DCS
+# DCS CSR Generation
 sudo openssl req -new \
   -key ${ETCDCTL_KEY} \
   -subj "/CN=${ETCD_HOSTNAME}" \
   -out ${DCS_CSR}
 
-# Criar um arquivo de extensão SAN
+# Create a SAN extension file
 sudo bash -c "cat << EOF > ${DCS_SAN}
 subjectAltName = @alt_names
 
@@ -316,8 +277,7 @@ DNS.2 = ${ETCD_HOSTNAME}
 DNS.3 = ${ETCD_FQDN}
 EOF"
 
-
-# Assinatura do certificado do DCS pela CA
+# DCS certificate signed by the CA
 sudo openssl x509 -req \
   -in ${DCS_CSR} \
   -CA /etc/dcs/cert/ca.crt \
@@ -332,14 +292,14 @@ Certificate request self-signature ok
 subject=CN=dcs-00
 ```
 
-[$] Ajustes de permissões e propriedade:
+[$][dcs-00] Permissions and ownership adjustments:
 ```bash
 sudo bash -c "chmod 0600 /etc/dcs/cert/ca.key && \
 chmod 0640 /etc/dcs/cert/*.crt ${ETCDCTL_KEY} && \
 chown -R etcd:etcd /etc/dcs"
 ```
 
-[$] Confirme se ${HOME}/bin e crie o diretório:
+[$][dcs-00] Confirm that ${HOME}/bin is the correct directory and create it:
 ```bash
 if (echo $PATH | grep --color=auto "${HOME}/bin"); then
   mkdir ${HOME}/bin 2> /dev/null;
@@ -348,7 +308,7 @@ else
 fi
 ```
 
-[$] Criação do script de:
+[$][dcs-00] Creating a script to configure certificates on other nodes:
 ```bash
 vim ${HOME}/bin/etcd-sign-node.sh && chmod +x ${HOME}/bin/etcd-sign-node.sh
 ```
@@ -458,26 +418,23 @@ rm -fr ${OUT_DIR}
 
 ```
 
-[$] Start etcd service again:
+[$][dcs-00] Start etcd service again:
 ```bash
 etcd-sign-node.sh 'dcs-01:192.168.56.11 dcs-02:192.168.56.12'
 ```
 
-[all]
-
-[$] Start etcd service again:
+[$][all nodes] Start etcd service again:
 ```bash
 sudo systemctl start etcd
 ```
 
 ### Authentication
 
-Seguem passos para habilitar autenticação, obrigando aplicações clientes a
-fornecerem credenciais para acessar.
+The following steps enable authentication, requiring client applications to
+provide credentials to access them.
 
-[dcs-00]
 
-[$] Disable the user variable at this time.:
+[$][dcs-00] Disable the user variable at this time.:
 ```bash
 unset ETCDCTL_USER
 ```
@@ -492,12 +449,14 @@ etcdctl role add root
 Role root created
 ```
 
-> **Observação**  
->
-> O `etcd` permite criar usuários e roles antes de ativar a autenticação.
-> Durante essa fase, *warnings* são esperados e podem ser ignorados.
+> **Note**
 
-[$] Conceder permissões totais ao role root:
+>
+> The `etcd` command allows you to create users and roles before enabling
+> authentication.  
+> During this phase, warnings are expected and can be ignored.
+
+[$] Grant full permissions to the root role:
 ```bash
 etcdctl role grant-permission root --prefix=true readwrite /
 ```
@@ -505,7 +464,7 @@ etcdctl role grant-permission root --prefix=true readwrite /
 Role root updated
 ```
 
-[$] Criar o usuário root:
+[$] Create the root user:
 ```bash
 etcdctl user add root
 ```
@@ -515,7 +474,7 @@ Type password of root again for confirmation:
 User root created
 ```
 
-[$] Associar o usuário root ao role root:
+[$] Associate the root user with the root role:
 ```bash
 etcdctl user grant-role root root
 ```
@@ -531,7 +490,7 @@ etcdctl auth enable
 Authentication Enabled
 ```
 
-[$] Verificando o status de autenticação (erro esperado):
+[$] Checking authentication status (expected error):
 ```bash
 etcdctl auth status
 ```
@@ -540,10 +499,10 @@ etcdctl auth status
 Error: etcdserver: user name not found
 ```
 
-Mensagem de erro **esperada** por não fornecer um usuário após a habilitação
-da autenticação, comando sem `--user`.
+Expected error message due to not providing a user after enabling
+authentication, command without `--user`.
 
-[$] Verificando o status de autenticação:
+[$] Checking authentication status:
 ```bash
 etcdctl --user root auth status
 ```
@@ -554,8 +513,7 @@ AuthRevision: 5
 ```
 
 
-
-[$] Teste de acesso TLS ao cluster:
+[$] Listing the cluster members:
 ```bash
 etcdctl member list
 ```
@@ -565,20 +523,19 @@ etcdctl member list
 d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http://127.0.0.1:2379,http://192.168.56.12:2379, false
 ```
 
-A saída exibe os metadados do membro do cluster:
+The output displays the cluster member metadata:
 
-- `8cc5336ad7ebe6b`: ID único do membro (em hexadecimal);
-- `started`: Estado atual do membro (iniciado);
-- `dcs-00`: Nome legível do membro (definido em `ETCD_NAME`);
-- `https://192.168.56.10:2380`: URL de `peer` (usada para replicação de dados
-  entre nós do etcd);
-- `https://192.168.56.10:2379`: URL de cliente (onde aplicações, como o
-  Patroni, conectam);
-- `false`: Indica se o nó é um "*learner*" (aprendiz). Como é `false`, ele é
-  um membro votante pleno do cluster.
+- `8cc5336ad7ebe6b`: Unique member ID (in hexadecimal);
+- `started`: Current member state (started);
+- `dcs-00`: Human-readable member name (defined in `ETCD_NAME`);
+- `https://192.168.56.10:2380`: Peer URL (used for data replication between
+  etcd nodes);
+- `https://192.168.56.10:2379`: Client URL (where applications, such as
+  Patroni, connect);
+- `false`: Indicates whether the node is a "*learner*". Since it is `false`, it is a full voting member of the cluster.
 
-O resultado confirma que o etcd está rodando, é acessível via rede
-(`IP 192.168.56.10`) e a comunicação está devidamente criptografada (HTTPS).
+The result confirms that etcd is running, is accessible via the network
+(`IP 192.168.56.10`) and the communication is properly encrypted (HTTPS).
 
 [$] Check ports again:
 ```bash

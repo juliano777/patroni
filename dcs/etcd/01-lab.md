@@ -8,6 +8,14 @@ The ultimate goal of this section is to create a 3-node cluster.
 | `dcs-01`      | `192.168.56.11` |
 | `dcs-02`      | `192.168.56.12` |
 
+Terminology of commands:
+
+[$] ordinary user  
+[#] root user  
+[all nodes] the command must the issue on all nodes of the cluster  
+[any] the command can be given on any node of the cluster  
+[dcs-00] the command must be given on `dcs-00`
+
 
 ### Installation and initial configuration (single node)
 

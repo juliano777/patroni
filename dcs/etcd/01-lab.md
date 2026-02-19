@@ -639,6 +639,8 @@ No password required now.
 
 ### Replication
 
+The following are commands for monitoring an etcd cluster.
+
 
 [$][any] Listing the cluster members:
 ```bash
@@ -742,13 +744,15 @@ tested data volume and concurrency level reliably.
 
 ### Testing
 
-[$] Creating a key:
+Commands regarding keys and values.
+
+[$][any] Creating a key:
 ```bash
 etcdctl put foo bar
 ```
 
 
-[$] Obtaining the key value:
+[$][any] Obtaining the key value:
 ```bash
 etcdctl get --print-value-only foo
 ```
@@ -758,113 +762,3 @@ bar
 
 ### Backup
 
-[$] Criar diretório de backup e ajustes de permissão e propriedade:
-```bash
-# Criação de diretório e permissões
-sudo mkdir -pm 0770 /var/lib/dcs/backup && sudo chmod 0770 /var/lib/dcs
-
-# Propriedade
-sudo chown -R etcd:etcd /var/lib/dcs
-```
-
-[$] Criar snapshot do etcd:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${DCS_KEY} \
-  snapshot save /var/lib/dcs/backup/etcd-snapshot.db
-```
-```
-. . .
-Snapshot saved at /var/lib/dcs/backup/etcd-snapshot.db
-```
-
-[$] Ajuste de propriedade e permissões do arquivo de snapshot:
-```bash
-# Usuário e grupo etcd como donos
-sudo chown etcd:etcd /var/lib/dcs/backup/etcd-snapshot.db
-
-# Dono ler e escrever, grupo apenas leitura
-sudo chmod 0640 /var/lib/dcs/backup/etcd-snapshot.db
-```
-
-[$] Listar arquivos no diretório de backup:
-```bash
-ls -lh /var/lib/dcs/backup/
-```
-```
-total 24K
--rw-r----- 1 etcd etcd 21K Feb 12 14:37 etcd-snapshot.db
-```
-
-[$] Parar o serviço etcd:
-```bash
-sudo systemctl stop etcd
-```
-
-[$] Apagar o diretório de dados simulando um desastre:
-```bash
-sudo rm -fr /var/lib/etcd
-```
-
-[$] Restauração de backup:
-```bash
-sudo etcdutl snapshot restore /var/lib/dcs/backup/etcd-snapshot.db \
-  --name dcs-00 \
-  --data-dir /var/lib/etcd  \
-  --initial-cluster dcs-00=https://${ETCD_IP}:2380 \
-  --initial-cluster-token etcd-cluster-0 \
-  --initial-advertise-peer-urls https://${ETCD_IP}:2380
-```  
-```
-2026-02-12T14:38:20-03:00	info	snapshot/v3_snapshot.go:265	restoring snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
-2026-02-12T14:38:20-03:00	info	membership/store.go:141	Trimming membership information from the backend...
-2026-02-12T14:38:20-03:00	info	membership/cluster.go:421	added member	{"cluster-id": "34dc187f8d1c6d63", "local-member-id": "0", "added-peer-id": "8cc5336ad7ebe6b", "added-peer-peer-urls": ["https://192.168.56.10:2380"]}
-2026-02-12T14:38:20-03:00	info	snapshot/v3_snapshot.go:293	restored snapshot	{"path": "/var/lib/dcs/backup/etcd-snapshot.db", "wal-dir": "/var/lib/etcd/member/wal", "data-dir": "/var/lib/etcd", "snap-dir": "/var/lib/etcd/member/snap", "initial-memory-map-size": 10737418240}
-```
-
-`--initial-cluster` deve conter todos os membros do cluster.  
-`--data-dir` é onde o etcd restaurado irá armazenar os dados.
-
-
-[$] Ajustar propriedade do diretório de dados:
-```bash
-sudo chown -R etcd:etcd /var/lib/etcd
-```
-
-> **Observação**
->
-> A restauração (*restore*) é feita como `root`, mas o diretório final precisa
-> pertencer ao usuário `etcd` para que o serviço suba corretamente.
-
-[$] Iniciar o serviço:
-```bash
-sudo systemctl start etcd
-```
-
-[$] Teste de restore:
-```bash
-etcdctl \
-  --endpoints=https://${ETCD_IP}:2379 \
-  --user root \
-  --cacert=/etc/dcs/cert/ca.crt \
-  --cert=/etc/dcs/cert/${CRT} \
-  --key=/etc/dcs/cert/${DCS_KEY} \
-  get --print-value-only foo
-```
-```
-bar
-```
-
-<!-- export ETCDCTL_PASSWORD='123' -->
-
-
-
-
-
-https://chatgpt.com/share/68c1e553-36f8-800d-be39-057593c3e7c3
-
-https://www.enterprisedb.com/docs/supported-open-source/patroni/

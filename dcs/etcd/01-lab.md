@@ -1,6 +1,6 @@
 ## Lab
 
-O objetivo final desta seção é criar um _cluster_ de nós.  
+The ultimate goal of this section is to create a 3-node cluster.
 
 |  **Hostname** | **IP**          |
 |---------------|-----------------|
@@ -205,7 +205,7 @@ ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
 ETCD_ADVERTISE_CLIENT_URLS='http://${ETCD_IP}:2379,http://127.0.0.1:2379'
 
 # PEER URLs
-ETCD_LISTEN_PEER_URLS='https://${ETCD_IP}:2380'
+ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
 ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
 
 # O restante do arquivo permanece IGUAL

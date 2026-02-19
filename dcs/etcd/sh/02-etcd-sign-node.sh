@@ -94,6 +94,14 @@ EOF
   "
   ssh ${IP} "sudo bash -c '${CMD}'"
 
+  echo "  [+] Install the etcd CA as a trusted system CA."
+  CMD='cp /etc/dcs/cert/ca.crt /usr/local/share/ca-certificates/etcd-ca.crt'
+  ssh ${IP} "sudo bash -c '${CMD}'"
+
+  echo "  [+] Updating certificates in /etc/ssl/certs..."
+  CMD='update-ca-certificates &> /dev/null'
+  ssh ${IP} "sudo bash -c '${CMD}'"  
+
   echo "  [✔] ${NAME} done!"
   echo
 done

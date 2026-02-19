@@ -86,7 +86,12 @@ DCS_CSR="/etc/dcs/cert/\${ETCD_HOSTNAME}.csr"
 DCS_SAN="/etc/dcs/cert/\${ETCD_HOSTNAME}.ext"
 
 # The comma-separated list of etcd endpoints
-export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
+# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS="\\
+https://192.168.56.10:2379,\\
+https://192.168.56.11:2379,\\
+https://192.168.56.12:2379\\
+"
 
 # The CA certificate file used to verify the server
 export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
@@ -99,6 +104,9 @@ export ETCDCTL_KEY="/etc/dcs/cert/\${ETCD_HOSTNAME}.key"
 
 # The username for etcd authentication (Role-Based Access Control)
 export ETCDCTL_USER='root'
+
+# Path to the CA certificate used to validate the etcd server certificate
+ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
 
 EOF
 ```
@@ -197,33 +205,82 @@ sudo mkdir -pm 0770 /etc/dcs/cert && sudo chmod 0770 /etc/dcs
 [$][all nodes] Configuration file:
 ```bash
  sudo bash -c "cat << EOF > /etc/dcs/etcd
-ETCD_NAME='${ETCD_HOSTNAME}'
-ETCD_DATA_DIR='/var/lib/etcd'
+# ===============================
+# Basic node identity and storage
+# ===============================
 
-# CLIENT URLs
+# Logical name of this etcd member
+ETCD_NAME='${ETCD_HOSTNAME}'
+
+# Data directory for Raft state and WAL
+ETCD_DATA_DIR='/var/lib/etcd'         
+
+
+# ===============================
+# Client communication (port 2379)
+# ===============================
+
+# Listen on all interfaces
 ETCD_LISTEN_CLIENT_URLS='https://0.0.0.0:2379'
+
+# URLs advertised to clients
 ETCD_ADVERTISE_CLIENT_URLS='http://${ETCD_IP}:2379,http://127.0.0.1:2379'
 
-# PEER URLs
+# ===============================
+# Peer communication (port 2380)
+# ===============================
+
+# Listen for peer traffic
 ETCD_LISTEN_PEER_URLS='https://0.0.0.0:2380'
+
+# URL advertised to other members
 ETCD_INITIAL_ADVERTISE_PEER_URLS='https://${ETCD_IP}:2380'
 
-# O restante do arquivo permanece IGUAL
+# ===============================
+# Cluster bootstrap configuration
+# ===============================
+
+# List of all cluster members
 ETCD_INITIAL_CLUSTER='${ETCD_INITIAL_CLUSTER}'
+
+# Bootstrap a new cluster
 ETCD_INITIAL_CLUSTER_STATE='new'
+
+# Unique cluster identifier
 ETCD_INITIAL_CLUSTER_TOKEN='etcd-cluster-0'
 
-# TLS – CLIENT
+# ===============================
+# TLS configuration – client access
+# ===============================
+
+# Server/client certificate
 ETCD_CERT_FILE='${ETCDCTL_CERT}'
+
+# Private key for certificate
 ETCD_KEY_FILE='${ETCDCTL_KEY}'
+
+# Trusted CA
 ETCD_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+
+# Enforce client cert auth
 ETCD_CLIENT_CERT_AUTH='true'
 
-# TLS – PEER
+# ===============================
+# TLS configuration – peer access
+# ===============================
+
+# Peer certificate
 ETCD_PEER_CERT_FILE='${ETCDCTL_CERT}'
+
+# Peer private key
 ETCD_PEER_KEY_FILE='${ETCDCTL_KEY}'
+
+# Trusted CA for peers
 ETCD_PEER_TRUSTED_CA_FILE='/etc/dcs/cert/ca.crt'
+
+# Enforce peer cert auth
 ETCD_PEER_CLIENT_CERT_AUTH='true'
+
 EOF"
 ```
 
@@ -409,6 +466,14 @@ EOF
   "
   ssh ${IP} "sudo bash -c '${CMD}'"
 
+  echo "  [+] Install the etcd CA as a trusted system CA."
+  CMD='cp /etc/dcs/cert/ca.crt /usr/local/share/ca-certificates/etcd-ca.crt'
+  ssh ${IP} "sudo bash -c '${CMD}'"
+
+  echo "  [+] Updating certificates in /etc/ssl/certs..."
+  CMD='update-ca-certificates &> /dev/null'
+  ssh ${IP} "sudo bash -c '${CMD}'"  
+
   echo "  [✔] ${NAME} done!"
   echo
 done
@@ -456,7 +521,7 @@ Role root created
 > authentication.  
 > During this phase, warnings are expected and can be ignored.
 
-[$] Grant full permissions to the root role:
+[$][dcs-00] Grant full permissions to the root role:
 ```bash
 etcdctl role grant-permission root --prefix=true readwrite /
 ```
@@ -464,7 +529,7 @@ etcdctl role grant-permission root --prefix=true readwrite /
 Role root updated
 ```
 
-[$] Create the root user:
+[$][dcs-00] Create the root user:
 ```bash
 etcdctl user add root
 ```
@@ -474,7 +539,7 @@ Type password of root again for confirmation:
 User root created
 ```
 
-[$] Associate the root user with the root role:
+[$][dcs-00] Associate the root user with the root role:
 ```bash
 etcdctl user grant-role root root
 ```
@@ -482,7 +547,7 @@ etcdctl user grant-role root root
 Role root is granted to user root
 ```
 
-[$] Enable authentication:
+[$][dcs-00] Enable authentication:
 ```bash
 etcdctl auth enable
 ```
@@ -490,7 +555,7 @@ etcdctl auth enable
 Authentication Enabled
 ```
 
-[$] Checking authentication status (expected error):
+[$][dcs-00] Checking authentication status (expected error):
 ```bash
 etcdctl auth status
 ```
@@ -502,7 +567,7 @@ Error: etcdserver: user name not found
 Expected error message due to not providing a user after enabling
 authentication, command without `--user`.
 
-[$] Checking authentication status:
+[$][dcs-00] Checking authentication status:
 ```bash
 etcdctl --user root auth status
 ```
@@ -512,15 +577,80 @@ Authentication Status: true
 AuthRevision: 5
 ```
 
+[$][dcs-00] Check the ETCDCTL_USER variable in the .etcdvars file:
+```bash
+grep -i user .etcdvars 
+```
+```
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'
+```
 
-[$] Listing the cluster members:
+[$][dcs-00] Read etcd environment variables file:
+```bash
+source ~/.etcdvars
+```
+
+[$][dcs-00] Reading the variable xyz:
+```bash
+echo ${ETCDCTL_USER}
+```
+```
+root
+```
+
+Environment variable adjusted.  
+Now you no longer need to declare --user root.
+
+
+[$][dcs-00] Checking authentication status:
+```bash
+etcdctl auth status
+```
+```
+Password: 
+Authentication Status: true
+AuthRevision: 5
+```
+
+We still have to type the password every time...  
+That can be a bit counterproductive...
+
+
+[$][dcs-00] Variable ETCDCTL PASSWORD to store password:
+```bash
+read -sp 'Enter the etcd root user password: ' ETCDCTL_PASSWORD
+export ETCDCTL_PASSWORD
+```
+
+> **Attention!**
+> This is not recommended in a real environment.  
+> This is for educational purposes only, to speed up the exercises here.
+
+[$][dcs-00] Checking authentication status:
+```bash
+etcdctl auth status
+```
+```
+Authentication Status: true
+AuthRevision: 5
+```
+No password required now.
+
+### Replication
+
+
+[$][any] Listing the cluster members:
 ```bash
 etcdctl member list
 ```
 ```
-8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://127.0.0.1:2379,http://192.168.56.10:2379, false
-1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http://127.0.0.1:2379,http://192.168.56.11:2379, false
-d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http://127.0.0.1:2379,http://192.168.56.12:2379, false
+8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, ht│8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://│8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, http://127.0.0
+tp://127.0.0.1:2379,http://192.168.56.10:2379, false            │127.0.0.1:2379,http://192.168.56.10:2379, false                      │.1:2379,http://192.168.56.10:2379, false
+1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, h│1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http:/│1761bef04e125165, started, dcs-01, https://192.168.56.11:2380, http://127.0.
+ttp://127.0.0.1:2379,http://192.168.56.11:2379, false           │/127.0.0.1:2379,http://192.168.56.11:2379, false                     │0.1:2379,http://192.168.56.11:2379, false
+d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, h│d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http:/│d60f170a453bcaf4, started, dcs-02, https://192.168.56.12:2380, http://127.0.
+ttp://127.0.0.1:2379,http://192.168.56.12:2379, false
 ```
 
 The output displays the cluster member metadata:
@@ -537,39 +667,90 @@ The output displays the cluster member metadata:
 The result confirms that etcd is running, is accessible via the network
 (`IP 192.168.56.10`) and the communication is properly encrypted (HTTPS).
 
-[$] Check ports again:
+[$][any] Check ports:
 ```bash
 sudo ss -nltp | grep etcd
 ```
 ```
-LISTEN 0      4096   192.168.56.10:2380      0.0.0.0:*    users:(("etcd",pid=1172,fd=3))
-LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid=1172,fd=6))
+LISTEN 0      4096               *:2379            *:*    users:│LISTEN 0      4096               *:2380            *:*    users:(("et│LISTEN 0      4096               *:2379            *:*    users:(("etcd",pid
+(("etcd",pid=388,fd=6))                                         │cd",pid=387,fd=3))                                                   │=390,fd=6))
+LISTEN 0      4096               *:2380            *:*    users:│LISTEN 0      4096               *:2379            *:*    users:(("et│LISTEN 0      4096               *:2380            *:*    users:(("etcd",pid
+(("etcd",pid=388,fd=3))                                         │cd",pid=387,fd=6))                                                   │=390,fd=3))
 ```
+
+[$][any] Show etcd cluster endpoint status in tabular format:
+```bash
+etcdctl endpoint status --write-out=table
+```
+```
++----------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|          ENDPOINT          |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
++----------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+| https://192.168.56.10:2379 |  8cc5336ad7ebe6b |  3.5.16 |   84 MB |      true |      false |         9 |      39268 |              39268 |        |
+| https://192.168.56.11:2379 | 1761bef04e125165 |  3.5.16 |   84 MB |     false |      false |         9 |      39269 |              39269 |        |
+| https://192.168.56.12:2379 | d60f170a453bcaf4 |  3.5.16 |   84 MB |     false |      false |         9 |      39270 |              39270 |        |
++----------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+```
+
+
+[$][any] Check the current health of all etcd cluster endpoints:
+```bash
+etcdctl endpoint health --write-out=table
+```
+```
++----------------------------+--------+------------+-------+
+|          ENDPOINT          | HEALTH |    TOOK    | ERROR |
++----------------------------+--------+------------+-------+
+| https://192.168.56.10:2379 |   true | 1.586872ms |       |
+| https://192.168.56.12:2379 |   true | 5.651183ms |       |
+| https://192.168.56.11:2379 |   true | 1.998453ms |       |
++----------------------------+--------+------------+-------+
+```
+
+- reachable endpoints
+- health status (`true`)
+- request latency
+
+
+[$][any] Run a basic performance and latency benchmark against the etcd
+cluster:
+```bash
+etcdctl check perf
+```
+```
+ 59 / 60 Boooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooom   !  98.33%PASS: Throughput is 146 writes/s
+PASS: Slowest request took 0.116554s
+PASS: Stddev is 0.004930s
+PASS
+```
+
+The etcd cluster passed the performance benchmark, demonstrating acceptable
+write throughput, low maximum latency, and stable request timing.
+
+[$][any] Validate etcd behavior under data scale and estimate memory usage:
+```bash
+etcdctl check datascale
+```
+```
+Start data scale check for work load [10000 key-value pairs, 1024 bytes per key-value, 50 concurrent clients].
+ 10000 / 10000 Booooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo! 100.00% 6s
+PASS: Approximate system memory used : 56.34 MB.
+```
+The data scale test passed, indicating that the etcd cluster can handle the
+tested data volume and concurrency level reliably.
 
 
 ### Testing
 
-
-[$] Variável ETCDCTL_PASSWORD para armazenar senha:
+[$] Creating a key:
 ```bash
-read -sp 'Enter the etcd root user password: ' ETCDCTL_PASSWORD
-export ETCDCTL_PASSWORD
-```
-
-> **Atenção!**
->
-> Não é recomendado fazer isso em um ambient real.  
-> Apenas para fins didáticos para agilizar os exercícios aqui.
-
-[$] Criando uma chave:
-```bash
-etcdctl --user root put foo bar
+etcdctl put foo bar
 ```
 
 
-[$] Teste com autenticação:
+[$] Obtaining the key value:
 ```bash
-etcdctl --user root get --print-value-only foo
+etcdctl get --print-value-only foo
 ```
 ```
 bar
@@ -680,199 +861,7 @@ bar
 
 <!-- export ETCDCTL_PASSWORD='123' -->
 
-<!--
 
-### Replication
-
-
-[dcs-00]
-
-[$] ???:
-```bash
-etcdctl endpoint status --write-out=table
-```
-```
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-|          ENDPOINT          |       ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-| https://192.168.56.10:2379 | 8cc5336ad7ebe6b |  3.5.16 |   20 kB |      true |      false |         2 |         16 |                 16 |        |
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-```
-
-- IS_LEADER = true
-- sem erros
-- DB size estável
-
-
-[$] ???:
-```bash
-etcdctl member list
-```
-```
-8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
-```
-
-
-etcdctl member add dcs-01 \
-  --peer-urls=https://192.168.56.11:2380
-Member 3428d5b90fd92915 added to cluster 34dc187f8d1c6d63
-
-ETCD_NAME="dcs-01"
-ETCD_INITIAL_CLUSTER="dcs-00=https://192.168.56.10:2380,dcs-01=https://192.168.56.11:2380"
-ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.56.11:2380"
-ETCD_INITIAL_CLUSTER_STATE="existing"
-
-
-Gera um ID de membro
-Reserva o nome dcs-01
-Associa o endereço de peer (2380)
-Atualiza o Raft membership
-
-
-⚠️ Essa saída não é informativa — ela é prescritiva.
-Ela diz exatamente como o próximo nó deve ser configurado.
-
-
-
-
-[$][dcs-01/02] Script de configuração automatizada:
-```bash
-touch /tmp/setup-etcd-node.sh && \
-chmod +x /tmp/setup-etcd-node.sh && \
-vim /tmp/setup-etcd-node.sh
-```
-```bash
-# The comma-separated list of etcd endpoints
-export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
-
-# The CA certificate file used to verify the server
-export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
-
-# The client certificate file for TLS authentication
-export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
-
-# The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${DCS_KEY}'
-
-# The username for etcd authentication (Role-Based Access Control)
-export ETCDCTL_USER='root'# The comma-separated list of etcd endpoints
-export ETCDCTL_ENDPOINTS="https://\${ETCD_IP}:2379"
-
-# The CA certificate file used to verify the server
-export ETCDCTL_CACERT='/etc/dcs/cert/ca.crt'
-
-# The client certificate file for TLS authentication
-export ETCDCTL_CERT='/etc/dcs/cert/${CRT}'
-
-# The client private key file for TLS authentication
-export ETCDCTL_KEY='/etc/dcs/cert/${DCS_KEY}'
-
-# The username for etcd authentication (Role-Based Access Control)
-export ETCDCTL_USER='root'
-```
-
-[$] Executar o script:
-```bash
-/tmp/setup-etcd-node.sh
-```
-
-
-
-dcs-00=https://192.168.56.10:2380
-dcs-01=https://192.168.56.11:2380
-dcs-02=https://192.168.56.12:2380
-
--->
-
-<!--
-
-1️⃣ Preparação dos nós dcs-01 e dcs-02
-
-Em cada novo nó (dcs-01 e depois dcs-02):
-
-✔ Instalação
-
-Repita exatamente:
-
-Instalação do etcd
-
-Criação de ~/.etcdvars
-
-Configuração de TLS
-
-Criação dos certificados com CN correspondente ao hostname
-
-Permissões e ownership
-
-
-
-
-Nó `dcs-00`:
-
-```bash
-#
-etcdctl endpoint status --write-out=table
-
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-|          ENDPOINT          |       ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-| https://192.168.56.10:2379 | 8cc5336ad7ebe6b |  3.5.16 |   20 kB |      true |      false |         2 |         20 |                 20 |        |
-+----------------------------+-----------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
-
-
-#
-etcdctl member list
-8cc5336ad7ebe6b, started, dcs-00, https://192.168.56.10:2380, https://192.168.56.10:2379, false
-
-# 
-etcdctl member add dcs-01 \
-  --peer-urls=https://192.168.56.11:2380
-
-
-Member 52206918db3e2f4a added to cluster 34dc187f8d1c6d63
-
-ETCD_NAME="dcs-01"
-ETCD_INITIAL_CLUSTER="dcs-00=https://192.168.56.10:2380,dcs-01=https://192.168.56.11:2380"
-ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.56.11:2380"
-ETCD_INITIAL_CLUSTER_STATE="existing"  
-
-
-
-
-  
-
-etcdctl member add dcs-02 \
-  --peer-urls=https://192.168.56.12:2380
-
-
-
-
-
-#
-etcdctl member list
-
-#
-ETCD_INITIAL_CLUSTER="\
-dcs-00=https://192.168.56.10:2380,\
-dcs-01=https://192.168.56.11:2380,\
-dcs-02=https://192.168.56.12:2380"
-
-# 
-ETCD_INITIAL_CLUSTER_STATE='existing'
-
-# 
-sed "s|\(ETCD_INITIAL_CLUSTER=\).*|\1'${ETCD_INITIAL_CLUSTER}'|g" \
--i /etc/dcs/etcd
-
-# 
-sed \
-"s|\(ETCD_INITIAL_CLUSTER_STATE=\).*|\1'${ETCD_INITIAL_CLUSTER_STATE}'|g" \
--i /etc/dcs/etcd
-```
-
--->
-
-<!-- --------------------------------------------------------------------- -->
 
 
 

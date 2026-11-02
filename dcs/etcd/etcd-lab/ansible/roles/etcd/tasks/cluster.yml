@@ -1,0 +1,28 @@
+---
+# Dispara os restarts pendentes (config, certificados) antes de garantir o start
+- name: Aplicar handlers pendentes
+  ansible.builtin.meta: flush_handlers
+
+# async/poll 0: com Type=notify o systemd só considera o etcd "pronto" quando
+# há quorum, então cada nó não pode esperar pelos outros.
+- name: Habilitar e iniciar o etcd
+  ansible.builtin.systemd:
+    name: etcd
+    state: started
+    enabled: true
+    daemon_reload: true
+  async: 300
+  poll: 0
+
+- name: Aguardar o nó ficar saudável (inclui quorum do cluster)
+  ansible.builtin.uri:
+    url: https://127.0.0.1:2379/health
+    ca_path: "{{ etcd_cert_dir }}/ca.crt"
+    client_cert: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.crt"
+    client_key: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.key"
+    return_content: true
+  register: etcd_health
+  until: etcd_health.status is defined and etcd_health.status == 200
+  retries: 40
+  delay: 3
+  changed_when: false

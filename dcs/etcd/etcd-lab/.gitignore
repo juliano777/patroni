@@ -1,0 +1,4 @@
+.vagrant/
+.venv/
+ansible/collections/
+*.box

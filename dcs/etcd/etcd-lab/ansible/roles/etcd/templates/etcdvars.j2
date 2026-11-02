@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+# API version (Patroni required version)
+export ETCDCTL_API='3'
+
+# Log level
+export ETCD_LOG_LEVEL='error'
+
+# Hostname
+export ETCD_HOSTNAME="`hostname -s`"
+
+# Fully Qualified Domain (Host) Name
+export ETCD_FQDN="`hostname -f`"
+
+# IP address
+export ETCD_IP='{{ node_ip }}'
+
+# The comma-separated list of etcd endpoints
+export ETCDCTL_ENDPOINTS='{{ etcd_client_endpoints | trim }}'
+
+# The CA certificate file used to verify the server
+export ETCDCTL_CACERT='{{ etcd_cert_dir }}/ca.crt'
+
+# The client certificate file for TLS authentication
+export ETCDCTL_CERT="{{ etcd_cert_dir }}/${ETCD_HOSTNAME}.crt"
+
+# The client private key file for TLS authentication
+export ETCDCTL_KEY="{{ etcd_cert_dir }}/${ETCD_HOSTNAME}.key"
+
+# The username for etcd authentication (Role-Based Access Control)
+export ETCDCTL_USER='root'
+{% if etcd_store_password_in_etcdvars %}
+
+# Password of the etcd root user.
+# Attention! This is not recommended in a real environment.
+# This is for educational purposes only, to speed up the exercises.
+export ETCDCTL_PASSWORD='{{ etcd_root_password }}'
+{% endif %}

@@ -1,0 +1,32 @@
+---
+etcd_dir: /etc/dcs
+etcd_cert_dir: "{{ etcd_dir }}/cert"
+etcd_data_dir: /var/lib/etcd
+etcd_backup_dir: /var/backups/etcd
+etcd_bootstrap_marker: "{{ etcd_dir }}/.cluster-bootstrapped"
+
+# O primeiro nó do grupo "dcs" hospeda a CA (como dcs-00 no material)
+etcd_ca_host: "{{ groups['dcs'][0] }}"
+etcd_key_size: 4096
+etcd_cert_days: 3650
+etcd_cluster_token: etcd-cluster-0
+
+# Guarda a senha do root em ~/.etcdvars (só para o laboratório; veja o material)
+etcd_store_password_in_etcdvars: true
+
+etcd_initial_cluster: >-
+  {% for h in groups['dcs'] %}{{ h }}=https://{{ hostvars[h].node_ip }}:2380{% if not loop.last %},{% endif %}{% endfor %}
+
+etcd_client_endpoints: >-
+  {% for h in groups['dcs'] %}https://{{ hostvars[h].node_ip }}:2379{% if not loop.last %},{% endif %}{% endfor %}
+
+# Ambiente do etcdctl usado pelo Ansible (endpoint local, certificado do próprio nó)
+etcdctl_env:
+  ETCDCTL_API: "3"
+  ETCDCTL_ENDPOINTS: "https://127.0.0.1:2379"
+  ETCDCTL_CACERT: "{{ etcd_cert_dir }}/ca.crt"
+  ETCDCTL_CERT: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.crt"
+  ETCDCTL_KEY: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.key"
+
+etcdctl_auth_env: >-
+  {{ etcdctl_env | combine({'ETCDCTL_USER': 'root', 'ETCDCTL_PASSWORD': etcd_root_password}) }}

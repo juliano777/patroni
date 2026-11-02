@@ -1,0 +1,17 @@
+---
+# "lab_domain" e "node_ip" (por host) vêm do Vagrantfile.
+
+# Hosts do cluster Patroni que ainda não existem neste lab (proxy e banco),
+# mantidos no /etc/hosts como no material original.
+extra_hosts:
+  - { name: proxy-00, ip: 192.168.56.20 }
+  - { name: proxy-01, ip: 192.168.56.21 }
+  - { name: db-00,    ip: 192.168.56.70 }
+  - { name: db-01,    ip: 192.168.56.71 }
+  - { name: db-02,    ip: 192.168.56.72 }
+
+# Usuário do lab que usará o etcdctl
+lab_user: vagrant
+
+# ATENÇÃO: senha de laboratório. Em ambiente real use ansible-vault.
+etcd_root_password: patroni

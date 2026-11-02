@@ -1,0 +1,4 @@
+---
+# Instalar com: ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+collections:
+  - name: community.crypto

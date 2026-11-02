@@ -1,0 +1,6 @@
+{% for h in groups['all'] %}
+{{ hostvars[h].node_ip }}  {{ h }}.{{ lab_domain }}  {{ h }}
+{% endfor %}
+{% for e in extra_hosts %}
+{{ e.ip }}  {{ e.name }}.{{ lab_domain }}  {{ e.name }}
+{% endfor %}

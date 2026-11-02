@@ -1,0 +1,18 @@
+---
+- ansible.builtin.import_tasks: install.yml
+  tags: [etcd_install]
+
+- ansible.builtin.import_tasks: tls.yml
+  tags: [etcd_tls]
+
+- ansible.builtin.import_tasks: config.yml
+  tags: [etcd_config]
+
+- ansible.builtin.import_tasks: cluster.yml
+  tags: [etcd_cluster]
+
+- ansible.builtin.import_tasks: auth.yml
+  tags: [etcd_auth]
+
+- ansible.builtin.import_tasks: user.yml
+  tags: [etcd_user]

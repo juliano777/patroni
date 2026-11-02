@@ -1,0 +1,74 @@
+---
+# Habilita autenticação (usuário/role root) uma única vez, a partir do primeiro nó.
+# O comando "auth status" SEM usuário responde "Authentication Status: false"
+# enquanto a autenticação não foi habilitada e dá erro depois disso.
+- name: Autenticação do etcd
+  when: inventory_hostname == etcd_ca_host
+  block:
+    - name: Consultar o status da autenticação
+      ansible.builtin.command: etcdctl auth status
+      environment: "{{ etcdctl_env }}"
+      register: etcd_auth_status
+      failed_when: false
+      changed_when: false
+
+    - name: Habilitar autenticação
+      when: "'Authentication Status: false' in etcd_auth_status.stdout"
+      block:
+        - name: Criar a role root
+          ansible.builtin.command: etcdctl role add root
+          environment: "{{ etcdctl_env }}"
+          register: r
+          changed_when: r.rc == 0
+          failed_when: r.rc != 0 and 'already exists' not in r.stderr
+
+        - name: Conceder permissão total à role root
+          ansible.builtin.command: etcdctl role grant-permission root --prefix=true readwrite /
+          environment: "{{ etcdctl_env }}"
+          changed_when: true
+
+        - name: Criar o usuário root
+          ansible.builtin.command: "etcdctl user add root --new-user-password={{ etcd_root_password | quote }}"
+          environment: "{{ etcdctl_env }}"
+          register: r
+          changed_when: r.rc == 0
+          failed_when: r.rc != 0 and 'already exists' not in r.stderr
+          no_log: true
+
+        - name: Associar o usuário root à role root
+          ansible.builtin.command: etcdctl user grant-role root root
+          environment: "{{ etcdctl_env }}"
+          changed_when: true
+
+        - name: Habilitar a autenticação
+          ansible.builtin.command: etcdctl auth enable
+          environment: "{{ etcdctl_env }}"
+          changed_when: true
+
+    - name: Conferir o status da autenticação com o usuário root
+      ansible.builtin.command: etcdctl auth status
+      environment: "{{ etcdctl_auth_env }}"
+      register: etcd_auth_check
+      changed_when: false
+      no_log: true
+
+    - name: Membros do cluster
+      ansible.builtin.command: etcdctl member list --write-out=table
+      environment: "{{ etcdctl_auth_env }}"
+      register: etcd_members
+      changed_when: false
+      no_log: true
+
+    - name: Exibir membros
+      ansible.builtin.debug:
+        msg: "{{ etcd_members.stdout_lines }}"
+
+# Marca o bootstrap como concluído em todos os nós (evita apagar os dados em novas execuções)
+- name: Marcar o cluster como inicializado
+  ansible.builtin.copy:
+    dest: "{{ etcd_bootstrap_marker }}"
+    content: ""
+    force: false
+    owner: etcd
+    group: etcd
+    mode: "0644"

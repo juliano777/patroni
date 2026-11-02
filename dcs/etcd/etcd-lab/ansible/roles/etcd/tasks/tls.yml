@@ -1,0 +1,128 @@
+---
+# ---------------------------------------------------------------------------
+# CA própria, hospedada no primeiro nó (dcs-00). Cada nó gera a sua chave e o
+# seu CSR localmente; a CA assina; o certificado volta para o nó. A chave
+# privada de cada nó nunca sai dele.
+# ---------------------------------------------------------------------------
+
+- name: Chave privada da CA
+  community.crypto.openssl_privatekey:
+    path: "{{ etcd_cert_dir }}/ca.key"
+    size: "{{ etcd_key_size }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == etcd_ca_host
+
+- name: CSR da CA
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ etcd_cert_dir }}/ca.key"
+    common_name: dcs-ca
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+  register: etcd_ca_csr
+  changed_when: false
+  when: inventory_hostname == etcd_ca_host
+
+- name: Certificado da CA (autoassinado)
+  community.crypto.x509_certificate:
+    path: "{{ etcd_cert_dir }}/ca.crt"
+    csr_content: "{{ etcd_ca_csr.csr }}"
+    privatekey_path: "{{ etcd_cert_dir }}/ca.key"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ etcd_cert_days }}d"
+    owner: etcd
+    group: etcd
+    mode: "0644"
+  when: inventory_hostname == etcd_ca_host
+
+- name: Ler o certificado da CA
+  ansible.builtin.slurp:
+    src: "{{ etcd_cert_dir }}/ca.crt"
+  register: etcd_ca_pem
+  delegate_to: "{{ etcd_ca_host }}"
+  run_once: true
+
+- name: Distribuir o certificado da CA
+  ansible.builtin.copy:
+    dest: "{{ etcd_cert_dir }}/ca.crt"
+    content: "{{ etcd_ca_pem.content | b64decode }}"
+    owner: etcd
+    group: etcd
+    mode: "0644"
+
+- name: Instalar a CA do etcd como CA confiável do sistema
+  ansible.builtin.copy:
+    dest: /usr/local/share/ca-certificates/etcd-ca.crt
+    content: "{{ etcd_ca_pem.content | b64decode }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Update CA certificates
+
+# ---------------------------------------------------------------------------
+# Certificado de cada nó (servidor + cliente + peer)
+# ---------------------------------------------------------------------------
+
+- name: Chave privada do nó
+  community.crypto.openssl_privatekey:
+    path: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.key"
+    size: "{{ etcd_key_size }}"
+    owner: etcd
+    group: etcd
+    mode: "0640"
+
+- name: CSR do nó
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.key"
+    common_name: "{{ inventory_hostname }}"
+    subject_alt_name:
+      - "DNS:{{ inventory_hostname }}"
+      - "DNS:{{ inventory_hostname }}.{{ lab_domain }}"
+      - "DNS:localhost"
+      - "IP:{{ node_ip }}"
+      - "IP:127.0.0.1"
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+      - clientAuth
+  register: etcd_node_csr
+  changed_when: false
+
+- name: Verificar se o certificado do nó já existe
+  ansible.builtin.stat:
+    path: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.crt"
+  register: etcd_node_crt_stat
+
+- name: Ler o certificado atual do nó
+  ansible.builtin.slurp:
+    src: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.crt"
+  register: etcd_node_crt_current
+  when: etcd_node_crt_stat.stat.exists
+
+- name: Assinar o certificado do nó na CA
+  community.crypto.x509_certificate_pipe:
+    content: "{{ (etcd_node_crt_current.content | b64decode) if etcd_node_crt_stat.stat.exists else omit }}"
+    csr_content: "{{ etcd_node_csr.csr }}"
+    provider: ownca
+    ownca_path: "{{ etcd_cert_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ etcd_cert_dir }}/ca.key"
+    ownca_not_after: "+{{ etcd_cert_days }}d"
+  delegate_to: "{{ etcd_ca_host }}"
+  register: etcd_node_crt
+
+- name: Gravar o certificado do nó
+  ansible.builtin.copy:
+    dest: "{{ etcd_cert_dir }}/{{ inventory_hostname }}.crt"
+    content: "{{ etcd_node_crt.certificate }}"
+    owner: etcd
+    group: etcd
+    mode: "0640"
+  notify: Restart etcd

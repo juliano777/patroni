@@ -1,0 +1,67 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Laboratório etcd (DCS do Patroni) - 3 nós
+#
+# Vagrant cria as VMs; o Ansible (ansible/site.yml) configura o que está dentro delas.
+# Fonte única de verdade para nomes e IPs: o hash NODES abaixo.
+# Ele é repassado ao Ansible como grupos de inventário e como variável "node_ip".
+
+BOX    = "localboxes/debian13"
+DOMAIN = "patroni.mydomain"
+CPUS   = 1
+MEMORY = 1024 # MB
+
+NODES = {
+  "dcs-00" => { ip: "192.168.56.10", group: "dcs" },
+  "dcs-01" => { ip: "192.168.56.11", group: "dcs" },
+  "dcs-02" => { ip: "192.168.56.12", group: "dcs" },
+}
+
+Vagrant.configure("2") do |config|
+  config.vm.box = BOX
+  # A box é local (sem URL de catálogo): não há o que verificar
+  config.vm.box_check_update = false
+  # Não dependemos de pasta compartilhada nem de Guest Additions
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.cpus = CPUS
+    vb.memory = MEMORY
+    # Clones vinculados: criação quase instantânea e pouco disco
+    vb.linked_clone = true
+    vb.check_guest_additions = false
+  end
+
+  NODES.each_with_index do |(name, cfg), idx|
+    config.vm.define name do |node|
+      node.vm.hostname = "#{name}.#{DOMAIN}"
+      node.vm.network "private_network", ip: cfg[:ip]
+
+      node.vm.provider "virtualbox" do |vb|
+        vb.name = "patroni-#{name}"
+      end
+
+      # O Ansible roda UMA vez, ao final, quando a última VM já está de pé,
+      # e atinge todas as máquinas de uma só vez (limit = "all").
+      if idx == NODES.size - 1
+        node.vm.provision "ansible" do |ansible|
+          ansible.playbook           = "ansible/site.yml"
+          ansible.config_file        = "ansible/ansible.cfg"
+          ansible.limit              = "all"
+          ansible.compatibility_mode = "2.0"
+
+          # { "dcs" => ["dcs-00", "dcs-01", "dcs-02"] }
+          ansible.groups = NODES
+            .group_by { |_, c| c[:group] }
+            .transform_values { |pairs| pairs.map(&:first) }
+
+          # { "dcs-00" => { "node_ip" => "192.168.56.10" }, ... }
+          ansible.host_vars = NODES.transform_values { |c| { "node_ip" => c[:ip] } }
+
+          ansible.extra_vars = { "lab_domain" => DOMAIN }
+        end
+      end
+    end
+  end
+end

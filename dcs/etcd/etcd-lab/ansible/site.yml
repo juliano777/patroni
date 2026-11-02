@@ -1,0 +1,9 @@
+---
+- name: Cluster etcd (DCS do Patroni)
+  hosts: dcs
+  become: true
+  any_errors_fatal: true
+
+  roles:
+    - common
+    - etcd

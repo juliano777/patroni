@@ -1,0 +1,55 @@
+---
+- name: Instalar etcd e dependências do Ansible para TLS
+  ansible.builtin.apt:
+    name:
+      - etcd-server
+      - etcd-client
+      - python3-cryptography
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Verificar se o cluster já foi inicializado
+  ansible.builtin.stat:
+    path: "{{ etcd_bootstrap_marker }}"
+  register: etcd_bootstrapped
+
+# O pacote Debian inicia o etcd com a configuração padrão (nó único) e cria
+# dados em /var/lib/etcd; isso impediria o bootstrap do cluster de 3 nós.
+- name: Parar o etcd antes do primeiro bootstrap
+  ansible.builtin.systemd:
+    name: etcd
+    state: stopped
+  when: not etcd_bootstrapped.stat.exists
+
+- name: Remover dados criados pela configuração padrão do pacote
+  ansible.builtin.file:
+    path: "{{ etcd_data_dir }}"
+    state: absent
+  when: not etcd_bootstrapped.stat.exists
+
+- name: Diretório de dados
+  ansible.builtin.file:
+    path: "{{ etcd_data_dir }}"
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: "0700"
+
+- name: Diretórios de configuração e certificados
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: "0750"
+  loop:
+    - "{{ etcd_dir }}"
+    - "{{ etcd_cert_dir }}"
+
+- name: Diretório de backups
+  ansible.builtin.file:
+    path: "{{ etcd_backup_dir }}"
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: "0770"

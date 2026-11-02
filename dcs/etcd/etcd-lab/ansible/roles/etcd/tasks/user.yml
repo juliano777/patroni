@@ -1,0 +1,28 @@
+---
+# Conveniência para quem usa o lab: ambiente do etcdctl para o usuário "{{ lab_user }}"
+- name: Incluir o usuário do lab no grupo etcd
+  ansible.builtin.user:
+    name: "{{ lab_user }}"
+    groups: etcd
+    append: true
+
+- name: Arquivo de variáveis de ambiente do etcd (~/.etcdvars)
+  ansible.builtin.template:
+    src: etcdvars.j2
+    dest: "/home/{{ lab_user }}/.etcdvars"
+    owner: "{{ lab_user }}"
+    group: "{{ lab_user }}"
+    mode: "0600"
+
+- name: Carregar ~/.etcdvars a cada login
+  ansible.builtin.blockinfile:
+    path: "/home/{{ lab_user }}/.bashrc"
+    marker: "# {mark} etcd environment"
+    block: |
+      # Read etcd environment variables file
+      source ~/.etcdvars
+
+- name: Bash completion do etcdctl
+  ansible.builtin.shell: etcdctl completion bash > /etc/profile.d/etcdctl-completion.sh
+  args:
+    creates: /etc/profile.d/etcdctl-completion.sh

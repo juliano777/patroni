@@ -1,0 +1,17 @@
+---
+- name: Arquivo de configuração do etcd
+  ansible.builtin.template:
+    src: etcd.env.j2
+    dest: "{{ etcd_dir }}/etcd"
+    owner: etcd
+    group: etcd
+    mode: "0640"
+  notify: Restart etcd
+
+- name: Link /etc/default/etcd -> /etc/dcs/etcd
+  ansible.builtin.file:
+    src: "{{ etcd_dir }}/etcd"
+    dest: /etc/default/etcd
+    state: link
+    force: true
+  notify: Restart etcd

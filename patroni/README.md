@@ -115,9 +115,6 @@ Error: etcdserver: permission denied
 ```
 
 
-
-
-
 Em cada nó:
 ```bash
 sudo vim /etc/patroni/dcs.yml
@@ -134,6 +131,11 @@ etcd3:
   key: /etc/patroni/etcd-client.key
   username: patroni
   password: "123"
+```
+
+```bash
+sudo chown root:postgres /etc/patroni/dcs.yml
+sudo chmod 640 /etc/patroni/dcs.yml
 ```
 
 ```bash

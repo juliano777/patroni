@@ -135,3 +135,10 @@ URL+="EL-${DISTRO_VERSION}-`uname -m`/pgdg-redhat-repo-latest.noarch.rpm"
 ```bash
 dnf install -y ${URL}
 ```  
+
+#### EPEL (Red Hat)
+
+**[#]** Instalação do pacote para o repositório EPEL:
+```bash
+dnf install -y epel-release
+```

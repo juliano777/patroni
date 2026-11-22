@@ -16,20 +16,25 @@ cat << EOF > /etc/hosts
 
 # Patroni cluster ============================================================
 
+# Template
+192.168.56.254  template.patroni.mydomain      template
+
 # DCS
-192.168.56.10  dcs-00.patroni.mydomain      dcs-00
-192.168.56.11  dcs-01.patroni.mydomain      dcs-01
-192.168.56.12  dcs-02.patroni.mydomain      dcs-02
+192.168.56.10   dcs-00.patroni.mydomain      dcs-00
+192.168.56.11   dcs-01.patroni.mydomain      dcs-01
+192.168.56.12   dcs-02.patroni.mydomain      dcs-02
 
 # Proxy
-192.168.56.20  proxy-00.patroni.mydomain    proxy-00
-192.168.56.21  proxy-01.patroni.mydomain    proxy-01
+192.168.56.20   proxy-00.patroni.mydomain    proxy-00
+192.168.56.21   proxy-01.patroni.mydomain    proxy-01
 
 # Database
-192.168.56.70  db-00.patroni.mydomain       db-00
-192.168.56.71  db-01.patroni.mydomain       db-01
-192.168.56.72  db-02.patroni.mydomain       db-02
-192.168.56.73  db-03.patroni.mydomain       db-03
+192.168.56.70   db-00.patroni.mydomain       db-00
+192.168.56.71   db-01.patroni.mydomain       db-01
+192.168.56.72   db-02.patroni.mydomain       db-02
+192.168.56.73   db-03.patroni.mydomain       db-03
 
+# App
+192.168.56.100  app-00.patroni.mydomain      app-00
 EOF
 ```

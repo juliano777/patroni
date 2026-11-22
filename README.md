@@ -1,14 +1,20 @@
 # Patroni tutorial
 
-## section
+## Sobre
 
+Este repositório tem por fim de forma didática, com teoria e prática servir
+de tutorial de implementação de clusters Patroni em diferentes cenários.
 
-https://www.enterprisedb.com/docs/static/298a2bb5138b10db2c544b54eb6d9256/e1b7c/supported-arch.png
+## Laboratórios
 
+![Tux](img/tux.png)
 
-##
+Visando abranger simulações de ambientes corporativos, todas máquinas
+participantes dos ambientes a serem simulados serão Linux.  
+E justamente pensando em ambientes corporativos, a parte prática poderá ser
+feita utilizando tanto distros Linux baseadas em Debian ou Red Hat.
 
-[#] 
+[#] Criação de /etc/hosts na máquina template:
 ```bash
 cat << EOF > /etc/hosts
 127.0.0.1	localhost

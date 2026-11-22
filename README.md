@@ -29,6 +29,7 @@ cat << EOF > /etc/hosts
 192.168.56.70  db-00.patroni.mydomain       db-00
 192.168.56.71  db-01.patroni.mydomain       db-01
 192.168.56.72  db-02.patroni.mydomain       db-02
+192.168.56.73  db-03.patroni.mydomain       db-03
 
 EOF
 ```

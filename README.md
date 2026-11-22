@@ -69,7 +69,7 @@ cat << EOF > /etc/hosts
 # Patroni cluster ============================================================
 
 # Template
-192.168.56.254  template.patroni.mydomain      template
+192.168.56.254  template.patroni.mydomain    template
 
 # DCS
 192.168.56.10   dcs-00.patroni.mydomain      dcs-00

@@ -55,28 +55,12 @@ SELECT version();
 PostgreSQL 18.4 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2) 13.3.0, 64-bit
 ```
 
+### Preparação
 
+Para uma maior comodidade, é recomendável criar o ambiente em forma de
+máquinas virtuais, sendo que uma delas será o modelo para todas seguintes.  
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-**[#]** Criação de /etc/hosts na máquina template:
+**[#]** Criação de /etc/hosts:
 ```bash
 cat << EOF > /etc/hosts
 127.0.0.1	localhost
@@ -106,3 +90,48 @@ cat << EOF > /etc/hosts
 192.168.56.100  app-00.patroni.mydomain      app-00
 EOF
 ```
+
+#### Configuração de repositórios
+
+##### PGDG (Debian)
+
+**[#]** Instalar pacotes necessários para configurar o repositório PGDG:
+```bash
+apt install -y postgresql-common ca-certificates
+```  
+
+**[#]** Adicionar o repositório oficial PGDG ao sistema?:
+```bash
+/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+```  
+
+#### PGDG (Red Hat)
+
+**[#]** Instalação de pacotes necessários:
+```bash
+yum install -y redhat-lsb-core dnf
+```  
+
+**[#]** Desabilite o módulo PostgreSQL built-in:
+```bash
+dnf -qy module disable postgresql
+```
+
+**[#]** Criar uma variável de ambiente que captura a versão majoritária da
+distro:
+```bash
+. /etc/os-release
+DISTRO_VERSION="${VERSION_ID%%.*}"
+```  
+  
+**[#]** Variável de ambiente para a URL de download do pacote de configuração
+de repositório:
+```bash
+URL='https://download.postgresql.org/pub/repos/yum/reporpms/'
+URL+="EL-${DISTRO_VERSION}-`uname -m`/pgdg-redhat-repo-latest.noarch.rpm"
+```  
+  
+**[#]** Instalação do pacote de configuração do repositório PGDG:
+```bash
+dnf install -y ${URL}
+```  
